@@ -2,10 +2,11 @@ package com.visionvoice.patient.ui.viewmodel
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
-import com.visionvoice.patient.data.model.AnamnesisQuestion
+import androidx.lifecycle.viewModelScope
+import com.visionvoice.patient.ai.GeminiAnamnesisService
+import com.visionvoice.patient.ai.TurnQuestion
 import com.visionvoice.patient.data.model.ChatMessage
 import com.visionvoice.patient.data.model.MessageSender
-import com.visionvoice.patient.data.model.UrgencyLevel
 import com.visionvoice.patient.data.model.VisionProfile
 import com.visionvoice.patient.voice.VoiceManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,43 +18,18 @@ import kotlinx.coroutines.launch
 class ScreeningViewModel(application: Application) : AndroidViewModel(application) {
 
     val voiceManager = VoiceManager(application)
+    val geminiService = GeminiAnamnesisService()
 
     private val _profile = MutableStateFlow(VisionProfile())
     val profile: StateFlow<VisionProfile> = _profile.asStateFlow()
 
-    val questions: List<AnamnesisQuestion> = listOf(
-        AnamnesisQuestion(
-            index = 1,
-            totalCount = 4,
-            title = "Visual Symptoms",
-            spokenPrompt = "What primary changes in your vision or eye discomfort have you noticed recently?",
-            hints = listOf("Blurry or hazy vision", "Trouble focusing up close", "Difficulty with night vision", "Occasional double vision")
-        ),
-        AnamnesisQuestion(
-            index = 2,
-            totalCount = 4,
-            title = "Duration & Affected Eye",
-            spokenPrompt = "How long has this been occurring, and is it affecting one eye or both?",
-            hints = listOf("Under 1 week", "2-4 weeks", "Over 2 months", "Both eyes", "Right eye predominantly", "Left eye only")
-        ),
-        AnamnesisQuestion(
-            index = 3,
-            totalCount = 4,
-            title = "Pain & Light Sensitivity",
-            spokenPrompt = "Do you feel pain, pressure, or noticeable sensitivity when stepping into bright sunlight?",
-            hints = listOf("Mild eye fatigue", "Moderate throbbing", "Sensitive to glare (Photophobia)", "Zero pain or headache")
-        ),
-        AnamnesisQuestion(
-            index = 4,
-            totalCount = 4,
-            title = "Medical History & Risks",
-            spokenPrompt = "Do you have diabetes, high blood pressure, or a family history of glaucoma or cataracts?",
-            hints = listOf("Type 2 Diabetes", "Hypertension", "Glaucoma family history", "High daily screen exposure", "No known conditions")
-        )
-    )
+    val tenTurnQuestions: List<TurnQuestion> = geminiService.fallbackTenTurnQuestions
 
-    private val _currentQuestionIndex = MutableStateFlow(0)
-    val currentQuestionIndex: StateFlow<Int> = _currentQuestionIndex.asStateFlow()
+    private val _currentTurnIndex = MutableStateFlow(0)
+    val currentTurnIndex: StateFlow<Int> = _currentTurnIndex.asStateFlow()
+
+    private val _isAiThinking = MutableStateFlow(false)
+    val isAiThinking: StateFlow<Boolean> = _isAiThinking.asStateFlow()
 
     val isListening: StateFlow<Boolean> = voiceManager.isListening
     val isSpeaking: StateFlow<Boolean> = voiceManager.isSpeaking
@@ -67,13 +43,25 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
     val audioProgress: StateFlow<Float> = _audioProgress.asStateFlow()
 
     init {
-        val initialQuestion = questions[0]
+        initializeSession("Hindi")
+    }
+
+    private fun initializeSession(language: String) {
+        geminiService.initializeSession(language)
+        val initialQ = tenTurnQuestions[0]
+        val initialText = if (language.equals("English", ignoreCase = true)) {
+            initialQ.promptEnglish
+        } else {
+            initialQ.promptHindi
+        }
+
         _profile.update { current ->
             current.copy(
+                selectedLanguage = language,
                 chatHistory = listOf(
                     ChatMessage(
                         sender = MessageSender.AI_ASSISTANT,
-                        text = "Hello! I am your VisionVoice clinical assistant. Let's understand your vision symptoms together. ${initialQuestion.spokenPrompt}"
+                        text = initialText
                     )
                 )
             )
@@ -83,6 +71,7 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
     fun setLanguage(language: String) {
         _profile.update { it.copy(selectedLanguage = language) }
         voiceManager.setLanguage(language)
+        initializeSession(language)
     }
 
     fun setAudioGuidance(enabled: Boolean) {
@@ -104,55 +93,49 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun stopListening() {
-        voiceManager.stopListening()
-    }
-
     fun submitVoiceResponse(text: String) {
-        _profile.update { current ->
-            val updatedChat = current.chatHistory + ChatMessage(
-                sender = MessageSender.PATIENT,
-                text = text
-            )
+        if (_isAiThinking.value) return
 
-            when (_currentQuestionIndex.value) {
-                0 -> current.copy(
-                    symptoms = (current.symptoms + text).distinct(),
-                    chatHistory = updatedChat
+        val turn = _currentTurnIndex.value
+
+        // 1. Record Patient's Voice/Response
+        _profile.update { current ->
+            current.copy(
+                chatHistory = current.chatHistory + ChatMessage(
+                    sender = MessageSender.PATIENT,
+                    text = text
                 )
-                1 -> current.copy(
-                    duration = if (text.contains("week") || text.contains("month")) text else current.duration,
-                    affectedEye = if (text.contains("Both", ignoreCase = true)) "Both eyes" else text,
-                    chatHistory = updatedChat
-                )
-                2 -> current.copy(
-                    painLevel = text,
-                    photophobia = text.contains("glare", ignoreCase = true) || text.contains("light", ignoreCase = true),
-                    chatHistory = updatedChat
-                )
-                3 -> current.copy(
-                    riskFactors = (current.riskFactors + text).distinct(),
-                    chatHistory = updatedChat
-                )
-                else -> current.copy(chatHistory = updatedChat)
-            }
+            )
         }
 
-        if (_currentQuestionIndex.value < questions.lastIndex) {
-            val nextIdx = _currentQuestionIndex.value + 1
-            _currentQuestionIndex.value = nextIdx
-            val nextQ = questions[nextIdx]
-            _profile.update { current ->
-                current.copy(
-                    chatHistory = current.chatHistory + ChatMessage(
-                        sender = MessageSender.AI_ASSISTANT,
-                        text = nextQ.spokenPrompt
+        // 2. Query Gemini Adaptive Anamnesis Engine
+        _isAiThinking.value = true
+        viewModelScope.launch {
+            try {
+                val aiReply = geminiService.sendPatientMessage(turn, text)
+
+                _profile.update { current ->
+                    current.copy(
+                        chatHistory = current.chatHistory + ChatMessage(
+                            sender = MessageSender.AI_ASSISTANT,
+                            text = aiReply
+                        )
                     )
-                )
+                }
+
+                // Spoken output for low-vision patients
+                triggerAudioGuidance(aiReply)
+
+                if (turn < tenTurnQuestions.lastIndex) {
+                    _currentTurnIndex.value = turn + 1
+                } else {
+                    finalizeTriage()
+                }
+            } catch (e: Exception) {
+                // Safe recovery
+            } finally {
+                _isAiThinking.value = false
             }
-            triggerAudioGuidance(nextQ.spokenPrompt)
-        } else {
-            finalizeTriage()
         }
     }
 
@@ -160,36 +143,19 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
         submitVoiceResponse(hint)
     }
 
-    private fun finalizeTriage() {
-        val p = _profile.value
-        val hasHighRisk = p.riskFactors.any { it.contains("Diabetes", ignoreCase = true) || it.contains("Glaucoma", ignoreCase = true) }
-        val hasSevereSymptoms = p.painLevel.contains("Sharp", ignoreCase = true) || p.photophobia
-
-        val urgency = when {
-            hasSevereSymptoms -> UrgencyLevel.URGENT
-            hasHighRisk -> UrgencyLevel.PRIORITY
-            else -> UrgencyLevel.ROUTINE
-        }
-
-        val assessment = "Patient reports ${p.symptoms.joinToString(", ")} ongoing for ${p.duration}. " +
-                "Reported discomfort: ${p.painLevel}. Light sensitivity present: ${if (p.photophobia) "Yes" else "No"}. " +
-                "Underlying risk factors identified: ${p.riskFactors.joinToString(", ")}. " +
-                "Clinical referral classification: ${urgency.title}."
-
-        val summaryVoice = "Thank you. Your pre-clinical screening assessment is complete. I have generated your clinical summary."
-
-        _profile.update { current ->
-            current.copy(
-                urgencyLevel = urgency,
-                aiTriageAssessment = assessment,
-                chatHistory = current.chatHistory + ChatMessage(
-                    sender = MessageSender.AI_ASSISTANT,
-                    text = summaryVoice
-                )
+    private suspend fun finalizeTriage() {
+        _isAiThinking.value = true
+        try {
+            val updatedProfile = geminiService.extractStructuredProfile(
+                chatHistory = _profile.value.chatHistory,
+                baseProfile = _profile.value
             )
+            _profile.value = updatedProfile
+        } catch (e: Exception) {
+            // Keep existing base profile
+        } finally {
+            _isAiThinking.value = false
         }
-
-        triggerAudioGuidance(summaryVoice)
     }
 
     fun toggleAudioPlayback() {
@@ -197,8 +163,10 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
             voiceManager.stopSpeaking()
             _isPlayingAudio.value = false
         } else {
-            val currentQ = questions[_currentQuestionIndex.value]
-            speakPrompt(currentQ.spokenPrompt)
+            val lastAssistantMsg = _profile.value.chatHistory
+                .lastOrNull { it.sender == MessageSender.AI_ASSISTANT }?.text
+                ?: getCurrentTurnPrompt()
+            speakPrompt(lastAssistantMsg)
         }
     }
 
@@ -207,8 +175,27 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun replayAudio() {
-        val currentQ = questions[_currentQuestionIndex.value]
-        speakPrompt(currentQ.spokenPrompt)
+        val lastAssistantMsg = _profile.value.chatHistory
+            .lastOrNull { it.sender == MessageSender.AI_ASSISTANT }?.text
+            ?: getCurrentTurnPrompt()
+        speakPrompt(lastAssistantMsg)
+    }
+
+    fun getCurrentTurnPrompt(): String {
+        val q = tenTurnQuestions[_currentTurnIndex.value]
+        return if (_profile.value.selectedLanguage.equals("English", ignoreCase = true)) {
+            q.promptEnglish
+        } else {
+            q.promptHindi
+        }
+    }
+
+    fun getCurrentTurnTitle(): String {
+        return tenTurnQuestions[_currentTurnIndex.value].title
+    }
+
+    fun getCurrentTurnHints(): List<String> {
+        return tenTurnQuestions[_currentTurnIndex.value].hints
     }
 
     private fun speakPrompt(prompt: String) {

@@ -30,6 +30,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -52,6 +53,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.visionvoice.patient.data.model.MessageSender
 import com.visionvoice.patient.ui.components.AudioPlaybackCard
 import com.visionvoice.patient.ui.components.LargePillButton
 import com.visionvoice.patient.ui.components.MassiveVoiceActionButton
@@ -71,8 +73,8 @@ import com.visionvoice.patient.ui.viewmodel.ScreeningViewModel
 
 /**
  * Screen 2: Voice-First AI Anamnesis (Stitch ID: 8730e38a3d6d4c3f9876fcb082fe3be2)
- * Interactive conversational AI clinical screening with Voice Orb Visualizer,
- * native SpeechRecognizer (STT) and TextToSpeech (TTS), and 80dp circular primary touch targets.
+ * 10-turn adaptive conversational anamnesis powered by Gemini AI, Voice Orb Visualizer,
+ * native SpeechRecognizer (STT) and TextToSpeech (TTS), and tactile quick response chips.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -83,15 +85,25 @@ fun VoiceAnamnesisScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val currentIndex by viewModel.currentQuestionIndex.collectAsState()
+    val currentTurn by viewModel.currentTurnIndex.collectAsState()
     val isListening by viewModel.isListening.collectAsState()
     val isSpeaking by viewModel.isSpeaking.collectAsState()
+    val isAiThinking by viewModel.isAiThinking.collectAsState()
     val transcript by viewModel.voiceTranscript.collectAsState()
     val isPlayingAudio by viewModel.isPlayingAudio.collectAsState()
     val audioProgress by viewModel.audioProgress.collectAsState()
     val voiceError by viewModel.voiceError.collectAsState()
+    val profile by viewModel.profile.collectAsState()
 
-    val currentQuestion = viewModel.questions[currentIndex]
+    val totalTurns = viewModel.tenTurnQuestions.size
+    val currentTitle = viewModel.getCurrentTurnTitle()
+    val currentHints = viewModel.getCurrentTurnHints()
+
+    // Retrieve the active question prompt (either latest from Gemini or the turn template)
+    val activePromptText = profile.chatHistory
+        .lastOrNull { it.sender == MessageSender.AI_ASSISTANT }?.text
+        ?: viewModel.getCurrentTurnPrompt()
+
     val scrollState = rememberScrollState()
 
     var hasAudioPermission by remember {
@@ -156,9 +168,10 @@ fun VoiceAnamnesisScreen(
                         )
                     )
                     Text(
-                        text = "Question ${currentQuestion.index} of ${currentQuestion.totalCount}",
+                        text = "Turn ${currentTurn + 1} of $totalTurns",
                         style = MaterialTheme.typography.bodyMedium.copy(
-                            color = DeepSlateText.copy(alpha = 0.75f)
+                            color = DeepMedicalTeal,
+                            fontWeight = FontWeight.SemiBold
                         )
                     )
                 }
@@ -174,26 +187,26 @@ fun VoiceAnamnesisScreen(
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Step Progress Track
+            // 10-Step Progress Track
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                viewModel.questions.forEachIndexed { idx, _ ->
-                    val isPast = idx < currentIndex
-                    val isCurrent = idx == currentIndex
+                repeat(totalTurns) { idx ->
+                    val isPast = idx < currentTurn
+                    val isCurrent = idx == currentTurn
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .height(8.dp)
+                            .height(6.dp)
                             .clip(RoundedCornerShape(9999.dp))
                             .background(
                                 when {
                                     isPast -> DeepMedicalTeal
                                     isCurrent -> WarmAmber
-                                    else -> OutlineSlate.copy(alpha = 0.6f)
+                                    else -> OutlineSlate.copy(alpha = 0.5f)
                                 }
                             )
                     )
@@ -208,27 +221,51 @@ fun VoiceAnamnesisScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(22.dp)) {
-                    Surface(
-                        shape = RoundedCornerShape(9999.dp),
-                        color = SurfaceTeal,
-                        modifier = Modifier.padding(bottom = 10.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
-                            text = currentQuestion.title,
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                color = DeepMedicalTeal,
-                                fontWeight = FontWeight.Bold
-                            ),
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
-                        )
+                        Surface(
+                            shape = RoundedCornerShape(9999.dp),
+                            color = SurfaceTeal,
+                            modifier = Modifier.padding(bottom = 10.dp)
+                        ) {
+                            Text(
+                                text = currentTitle,
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    color = DeepMedicalTeal,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                            )
+                        }
+
+                        if (isAiThinking) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(
+                                    color = WarmAmber,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "AI Analyzing...",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        color = DarkAmber,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                )
+                            }
+                        }
                     }
 
                     Text(
-                        text = currentQuestion.spokenPrompt,
+                        text = activePromptText,
                         style = MaterialTheme.typography.headlineMedium.copy(
                             color = DeepSlateText,
-                            fontSize = 24.sp,
-                            lineHeight = 34.sp,
+                            fontSize = 22.sp,
+                            lineHeight = 32.sp,
                             fontWeight = FontWeight.Bold
                         )
                     )
@@ -239,7 +276,7 @@ fun VoiceAnamnesisScreen(
 
             // Audio Guidance Playback Widget
             AudioPlaybackCard(
-                title = "Question Narration",
+                title = "Assistant Speech",
                 isPlaying = isSpeaking || isPlayingAudio,
                 progress = audioProgress,
                 onTogglePlay = { viewModel.toggleAudioPlayback() },
@@ -297,14 +334,15 @@ fun VoiceAnamnesisScreen(
 
             Text(
                 text = when {
+                    isAiThinking -> "Thinking & formulating next question..."
                     isSpeaking -> "Assistant is speaking..."
-                    isListening -> "Listening... Tap to finish response"
+                    isListening -> "Listening... Tap to submit answer"
                     else -> "Tap microphone to speak"
                 },
                 style = MaterialTheme.typography.titleMedium.copy(
                     color = when {
+                        isAiThinking || isListening -> DarkAmber
                         isSpeaking -> DeepMedicalTeal
-                        isListening -> DarkAmber
                         else -> DeepSlateText
                     },
                     fontWeight = FontWeight.Bold
@@ -329,7 +367,7 @@ fun VoiceAnamnesisScreen(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                currentQuestion.hints.forEach { hint ->
+                currentHints.forEach { hint ->
                     Surface(
                         shape = RoundedCornerShape(9999.dp),
                         color = SurfaceContainerLowest,
@@ -354,9 +392,9 @@ fun VoiceAnamnesisScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Navigate to Summary early or when complete
+            // Primary Navigation CTA
             LargePillButton(
-                text = if (currentIndex == viewModel.questions.lastIndex) "Complete & View Summary" else "Review Clinical Summary",
+                text = if (currentTurn >= totalTurns - 1) "Complete & View Clinical Summary" else "Review Summary So Far",
                 onClick = onNavigateToSummary,
                 containerColor = DeepMedicalTeal
             )

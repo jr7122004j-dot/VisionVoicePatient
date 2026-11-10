@@ -27,19 +27,63 @@ enum class UrgencyLevel(val title: String, val badgeColorHex: Long) {
 }
 
 @Serializable
+enum class FunctionalDominance(val label: String, val workingDistance: String) {
+    NEAR_DOMINANT("Near Dominant", "30 - 45 cm"),
+    INTERMEDIATE_DOMINANT("Intermediate Dominant", "60 - 100 cm"),
+    DISTANCE_DOMINANT("Distance Dominant", "> 200 cm"),
+    BALANCED_MULTIFOCAL("Balanced Multifocal", "Varied daily demands")
+}
+
+@Serializable
+data class OccupationalDemand(
+    val occupation: String = "Not specified",
+    val primaryDistance: String = "Near & Intermediate",
+    val visualDemandsDescription: String = "General daily activities"
+)
+
+@Serializable
+data class DigitalAndLighting(
+    val dailyScreenHours: String = "< 2 hours",
+    val lightingCondition: String = "Standard indoor lighting"
+)
+
+@Serializable
+data class SystemicHistory(
+    val hasDiabetes: Boolean = false,
+    val hasHypertension: Boolean = false,
+    val relevantNotes: String = "No chronic systemic conditions declared"
+)
+
+@Serializable
 data class VisionProfile(
     val id: String = UUID.randomUUID().toString().take(8).uppercase(),
     val backupCode: String = "VV-" + (1000..9999).random(),
-    val selectedLanguage: String = "English",
+    val selectedLanguage: String = "Hindi",
     val audioGuidanceEnabled: Boolean = true,
-    val symptoms: List<String> = listOf("Blurry or hazy vision", "Difficulty with night vision"),
+
+    // Core 6 Clinical Dimensions
+    val occupationalDemand: OccupationalDemand = OccupationalDemand(),
+    val environmentalHazards: List<String> = emptyList(),
+    val digitalAndLighting: DigitalAndLighting = DigitalAndLighting(),
+    val refractiveSymptoms: List<String> = listOf("Blurry or hazy vision"),
+    val systemicHistory: SystemicHistory = SystemicHistory(),
+    val pathologyIndicators: List<String> = emptyList(),
+
+    // Extra spontaneous patient symptoms
+    val additionalInformation: List<String> = emptyList(),
+
+    // General Clinical Attributes
+    val symptoms: List<String> = listOf("Blurry or hazy vision"),
     val duration: String = "2-4 weeks",
     val affectedEye: String = "Both eyes",
-    val painLevel: String = "Mild strain / discomfort",
-    val photophobia: Boolean = true,
-    val riskFactors: List<String> = listOf("Screen usage > 6 hrs", "Family history of glaucoma"),
-    val aiTriageAssessment: String = "Preliminary analysis indicates progressive bilateral refractive blur accompanied by mild photophobia. No sudden acute loss reported. Recommended for clinical refraction and slit-lamp ophthalmic evaluation.",
-    val urgencyLevel: UrgencyLevel = UrgencyLevel.PRIORITY,
+    val painLevel: String = "Mild discomfort",
+    val photophobia: Boolean = false,
+    val riskFactors: List<String> = emptyList(),
+
+    // Functional & Clinical Synthesis
+    val functionalDominance: FunctionalDominance = FunctionalDominance.BALANCED_MULTIFOCAL,
+    val aiTriageAssessment: String = "Preliminary analysis indicates progressive refractive blur. Recommended for clinical refraction and slit-lamp ophthalmic evaluation.",
+    val urgencyLevel: UrgencyLevel = UrgencyLevel.ROUTINE,
     val timestamp: Long = System.currentTimeMillis(),
     val chatHistory: List<ChatMessage> = emptyList()
 ) {
@@ -53,11 +97,13 @@ data class VisionProfile(
                 refId = id,
                 code = backupCode,
                 lang = selectedLanguage,
-                sym = symptoms,
-                dur = duration,
-                eye = affectedEye,
-                pain = painLevel,
-                risk = riskFactors,
+                occ = "${occupationalDemand.occupation} (${occupationalDemand.primaryDistance})",
+                env = environmentalHazards,
+                refract = refractiveSymptoms,
+                pathology = pathologyIndicators,
+                sys = systemicHistory.relevantNotes,
+                addInfo = additionalInformation,
+                funcDom = functionalDominance.label,
                 urgency = urgencyLevel.title,
                 triage = aiTriageAssessment,
                 ts = timestamp
@@ -71,11 +117,13 @@ data class HandoffSummary(
     val refId: String,
     val code: String,
     val lang: String,
-    val sym: List<String>,
-    val dur: String,
-    val eye: String,
-    val pain: String,
-    val risk: List<String>,
+    val occ: String,
+    val env: List<String>,
+    val refract: List<String>,
+    val pathology: List<String>,
+    val sys: String,
+    val addInfo: List<String>,
+    val funcDom: String,
     val urgency: String,
     val triage: String,
     val ts: Long
