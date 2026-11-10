@@ -64,11 +64,13 @@ data class SupportedLanguage(
 )
 
 val SupportedLanguages = listOf(
-    SupportedLanguage("en", "English", "English", "Clinical default"),
-    SupportedLanguage("es", "Spanish", "Español", "Voz y subtítulos"),
-    SupportedLanguage("hi", "Hindi", "हिन्दी", "आवाज और निर्देश"),
-    SupportedLanguage("fr", "French", "Français", "Guidage vocal"),
-    SupportedLanguage("bn", "Bengali", "বাংলা", "ভয়েস নির্দেশিকা")
+    SupportedLanguage("hi", "Hindi", "हिन्दी", "आवाज़ और निर्देश"),
+    SupportedLanguage("en", "English", "English (India)", "Clinical standard"),
+    SupportedLanguage("bn", "Bengali", "বাংলা", "ভয়েস নির্দেশিকা"),
+    SupportedLanguage("te", "Telugu", "తెలుగు", "వాయిస్ మరియు సూచనలు"),
+    SupportedLanguage("ta", "Tamil", "தமிழ்", "குரல் வழிகாட்டுதல்"),
+    SupportedLanguage("mr", "Marathi", "मराठी", "आवाज आणि सूचना"),
+    SupportedLanguage("raj", "Rajasthani", "राजस्थानी", "आवाज़ अर निर्देश")
 )
 
 /**

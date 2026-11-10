@@ -1,21 +1,22 @@
 package com.visionvoice.patient.ui.viewmodel
 
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import com.visionvoice.patient.data.model.AnamnesisQuestion
 import com.visionvoice.patient.data.model.ChatMessage
 import com.visionvoice.patient.data.model.MessageSender
 import com.visionvoice.patient.data.model.UrgencyLevel
 import com.visionvoice.patient.data.model.VisionProfile
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
+import com.visionvoice.patient.voice.VoiceManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-class ScreeningViewModel : ViewModel() {
+class ScreeningViewModel(application: Application) : AndroidViewModel(application) {
+
+    val voiceManager = VoiceManager(application)
 
     private val _profile = MutableStateFlow(VisionProfile())
     val profile: StateFlow<VisionProfile> = _profile.asStateFlow()
@@ -54,20 +55,16 @@ class ScreeningViewModel : ViewModel() {
     private val _currentQuestionIndex = MutableStateFlow(0)
     val currentQuestionIndex: StateFlow<Int> = _currentQuestionIndex.asStateFlow()
 
-    private val _isListening = MutableStateFlow(false)
-    val isListening: StateFlow<Boolean> = _isListening.asStateFlow()
-
-    private val _voiceTranscript = MutableStateFlow("")
-    val voiceTranscript: StateFlow<String> = _voiceTranscript.asStateFlow()
+    val isListening: StateFlow<Boolean> = voiceManager.isListening
+    val isSpeaking: StateFlow<Boolean> = voiceManager.isSpeaking
+    val voiceTranscript: StateFlow<String> = voiceManager.liveTranscript
+    val voiceError: StateFlow<String?> = voiceManager.voiceError
 
     private val _isPlayingAudio = MutableStateFlow(false)
     val isPlayingAudio: StateFlow<Boolean> = _isPlayingAudio.asStateFlow()
 
     private val _audioProgress = MutableStateFlow(0f)
     val audioProgress: StateFlow<Float> = _audioProgress.asStateFlow()
-
-    private var audioJob: Job? = null
-    private var listeningJob: Job? = null
 
     init {
         val initialQuestion = questions[0]
@@ -85,39 +82,30 @@ class ScreeningViewModel : ViewModel() {
 
     fun setLanguage(language: String) {
         _profile.update { it.copy(selectedLanguage = language) }
+        voiceManager.setLanguage(language)
     }
 
     fun setAudioGuidance(enabled: Boolean) {
         _profile.update { it.copy(audioGuidanceEnabled = enabled) }
+        if (!enabled) {
+            voiceManager.stopSpeaking()
+        }
     }
 
     fun toggleListening() {
-        if (_isListening.value) {
-            stopListening()
+        if (voiceManager.isListening.value) {
+            voiceManager.stopListening()
         } else {
-            startListening()
+            voiceManager.startListening { resultText ->
+                if (resultText.isNotBlank()) {
+                    submitVoiceResponse(resultText)
+                }
+            }
         }
     }
 
-    private fun startListening() {
-        _isListening.value = true
-        _voiceTranscript.value = "Listening to your voice..."
-        listeningJob?.cancel()
-        listeningJob = viewModelScope.launch {
-            delay(1500)
-            val currentQ = questions[_currentQuestionIndex.value]
-            val sampleResponse = currentQ.hints.firstOrNull() ?: "I have difficulty seeing clearly at distance."
-            _voiceTranscript.value = sampleResponse
-        }
-    }
-
-    private fun stopListening() {
-        _isListening.value = false
-        listeningJob?.cancel()
-        val recordedText = _voiceTranscript.value
-        if (recordedText.isNotBlank() && !recordedText.startsWith("Listening")) {
-            submitVoiceResponse(recordedText)
-        }
+    fun stopListening() {
+        voiceManager.stopListening()
     }
 
     fun submitVoiceResponse(text: String) {
@@ -150,9 +138,6 @@ class ScreeningViewModel : ViewModel() {
             }
         }
 
-        _voiceTranscript.value = ""
-        _isListening.value = false
-
         if (_currentQuestionIndex.value < questions.lastIndex) {
             val nextIdx = _currentQuestionIndex.value + 1
             _currentQuestionIndex.value = nextIdx
@@ -172,7 +157,6 @@ class ScreeningViewModel : ViewModel() {
     }
 
     fun selectHintResponse(hint: String) {
-        _voiceTranscript.value = hint
         submitVoiceResponse(hint)
     }
 
@@ -192,23 +176,29 @@ class ScreeningViewModel : ViewModel() {
                 "Underlying risk factors identified: ${p.riskFactors.joinToString(", ")}. " +
                 "Clinical referral classification: ${urgency.title}."
 
+        val summaryVoice = "Thank you. Your pre-clinical screening assessment is complete. I have generated your clinical summary."
+
         _profile.update { current ->
             current.copy(
                 urgencyLevel = urgency,
                 aiTriageAssessment = assessment,
                 chatHistory = current.chatHistory + ChatMessage(
                     sender = MessageSender.AI_ASSISTANT,
-                    text = "Thank you. Your pre-clinical screening assessment is complete. I have generated your clinical summary."
+                    text = summaryVoice
                 )
             )
         }
+
+        triggerAudioGuidance(summaryVoice)
     }
 
     fun toggleAudioPlayback() {
-        if (_isPlayingAudio.value) {
-            pauseAudio()
+        if (voiceManager.isSpeaking.value) {
+            voiceManager.stopSpeaking()
+            _isPlayingAudio.value = false
         } else {
-            playAudio()
+            val currentQ = questions[_currentQuestionIndex.value]
+            speakPrompt(currentQ.spokenPrompt)
         }
     }
 
@@ -216,35 +206,27 @@ class ScreeningViewModel : ViewModel() {
         _audioProgress.value = progress.coerceIn(0f, 1f)
     }
 
-    private fun playAudio() {
-        _isPlayingAudio.value = true
-        audioJob?.cancel()
-        audioJob = viewModelScope.launch {
-            while (_audioProgress.value < 1f && _isPlayingAudio.value) {
-                delay(200)
-                _audioProgress.update { (it + 0.05f).coerceAtMost(1f) }
-            }
-            _isPlayingAudio.value = false
-            if (_audioProgress.value >= 1f) {
-                _audioProgress.value = 0f
-            }
-        }
-    }
-
-    private fun pauseAudio() {
-        _isPlayingAudio.value = false
-        audioJob?.cancel()
-    }
-
     fun replayAudio() {
-        _audioProgress.value = 0f
-        playAudio()
+        val currentQ = questions[_currentQuestionIndex.value]
+        speakPrompt(currentQ.spokenPrompt)
     }
 
-    private fun triggerAudioGuidance(prompt: String) {
-        if (_profile.value.audioGuidanceEnabled) {
-            _audioProgress.value = 0f
-            playAudio()
+    private fun speakPrompt(prompt: String) {
+        _isPlayingAudio.value = true
+        voiceManager.speak(prompt) {
+            _isPlayingAudio.value = false
+            _audioProgress.value = 1f
         }
+    }
+
+    fun triggerAudioGuidance(prompt: String) {
+        if (_profile.value.audioGuidanceEnabled) {
+            speakPrompt(prompt)
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        voiceManager.destroy()
     }
 }

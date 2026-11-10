@@ -68,20 +68,24 @@ import com.visionvoice.patient.ui.theme.WarmAmber
 @Composable
 fun VoiceOrbVisualizer(
     isListening: Boolean,
+    isSpeaking: Boolean = false,
     transcriptText: String,
     onOrbClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isActive = isListening || isSpeaking
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseScale by infiniteTransition.animateFloat(
         initialValue = 1f,
-        targetValue = if (isListening) 1.18f else 1.0f,
+        targetValue = if (isActive) 1.18f else 1.0f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 900, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "orbPulse"
     )
+
+    val activeColor = if (isListening) WarmAmber else DeepMedicalTeal
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -93,27 +97,32 @@ fun VoiceOrbVisualizer(
                 .padding(vertical = 16.dp)
                 .size(128.dp)
         ) {
-            // Concentric Ripple Ring when listening
-            if (isListening) {
+            // Concentric Ripple Ring when active
+            if (isActive) {
                 Box(
                     modifier = Modifier
                         .size(124.dp)
                         .scale(pulseScale)
                         .clip(CircleShape)
-                        .background(WarmAmber.copy(alpha = 0.22f))
+                        .background(activeColor.copy(alpha = 0.22f))
                 )
                 Box(
                     modifier = Modifier
                         .size(110.dp)
                         .clip(CircleShape)
-                        .background(WarmAmber.copy(alpha = 0.35f))
+                        .background(activeColor.copy(alpha = 0.35f))
                 )
             }
 
             // Main Orb
-            val orbSize = if (isListening) 96.dp else 76.dp
-            val orbColor = if (isListening) WarmAmber else AmberContainer
-            val iconColor = if (isListening) Color.White else DarkAmber
+            val orbSize = if (isActive) 96.dp else 76.dp
+            val orbColor = when {
+                isListening -> WarmAmber
+                isSpeaking -> DeepMedicalTeal
+                else -> AmberContainer
+            }
+            val iconColor = if (isActive) Color.White else DarkAmber
+            val iconVector = if (isSpeaking) Icons.AutoMirrored.Filled.VolumeUp else Icons.Default.Mic
 
             Box(
                 contentAlignment = Alignment.Center,
@@ -122,20 +131,24 @@ fun VoiceOrbVisualizer(
                     .clip(CircleShape)
                     .background(orbColor)
                     .border(
-                        width = if (isListening) 3.dp else 2.dp,
-                        color = if (isListening) DarkAmber else OutlineSlate,
+                        width = if (isActive) 3.dp else 2.dp,
+                        color = if (isListening) DarkAmber else if (isSpeaking) DeepMedicalTeal else OutlineSlate,
                         shape = CircleShape
                     )
                     .clickable { onOrbClick() }
                     .semantics {
-                        contentDescription = if (isListening) "Listening active, tap to stop recording" else "Microphone ready, tap to speak"
+                        contentDescription = when {
+                            isListening -> "Listening active, tap to stop recording"
+                            isSpeaking -> "Assistant speaking, tap to stop"
+                            else -> "Microphone ready, tap to speak"
+                        }
                     }
             ) {
                 Icon(
-                    imageVector = if (isListening) Icons.Default.Mic else Icons.Default.Mic,
+                    imageVector = iconVector,
                     contentDescription = null,
                     tint = iconColor,
-                    modifier = Modifier.size(if (isListening) 44.dp else 36.dp)
+                    modifier = Modifier.size(if (isActive) 44.dp else 36.dp)
                 )
             }
         }

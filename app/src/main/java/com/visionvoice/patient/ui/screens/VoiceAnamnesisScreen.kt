@@ -1,5 +1,9 @@
 package com.visionvoice.patient.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,7 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -35,24 +39,30 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.visionvoice.patient.ui.components.AudioPlaybackCard
 import com.visionvoice.patient.ui.components.LargePillButton
 import com.visionvoice.patient.ui.components.MassiveVoiceActionButton
 import com.visionvoice.patient.ui.components.VoiceOrbVisualizer
-import com.visionvoice.patient.ui.theme.AmberContainer
 import com.visionvoice.patient.ui.theme.CanvasWarmWhite
+import com.visionvoice.patient.ui.theme.ClinicalError
 import com.visionvoice.patient.ui.theme.DarkAmber
 import com.visionvoice.patient.ui.theme.DeepMedicalTeal
 import com.visionvoice.patient.ui.theme.DeepSlateText
+import com.visionvoice.patient.ui.theme.ErrorContainer
+import com.visionvoice.patient.ui.theme.OnErrorContainer
 import com.visionvoice.patient.ui.theme.OutlineSlate
 import com.visionvoice.patient.ui.theme.SurfaceContainerLowest
 import com.visionvoice.patient.ui.theme.SurfaceTeal
@@ -62,8 +72,9 @@ import com.visionvoice.patient.ui.viewmodel.ScreeningViewModel
 /**
  * Screen 2: Voice-First AI Anamnesis (Stitch ID: 8730e38a3d6d4c3f9876fcb082fe3be2)
  * Interactive conversational AI clinical screening with Voice Orb Visualizer,
- * acoustic playback controls, and 80dp circular primary touch targets.
+ * native SpeechRecognizer (STT) and TextToSpeech (TTS), and 80dp circular primary touch targets.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun VoiceAnamnesisScreen(
     viewModel: ScreeningViewModel,
@@ -71,14 +82,43 @@ fun VoiceAnamnesisScreen(
     onNavigateToSummary: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val currentIndex by viewModel.currentQuestionIndex.collectAsState()
     val isListening by viewModel.isListening.collectAsState()
+    val isSpeaking by viewModel.isSpeaking.collectAsState()
     val transcript by viewModel.voiceTranscript.collectAsState()
     val isPlayingAudio by viewModel.isPlayingAudio.collectAsState()
     val audioProgress by viewModel.audioProgress.collectAsState()
+    val voiceError by viewModel.voiceError.collectAsState()
 
     val currentQuestion = viewModel.questions[currentIndex]
     val scrollState = rememberScrollState()
+
+    var hasAudioPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasAudioPermission = isGranted
+        if (isGranted) {
+            viewModel.toggleListening()
+        }
+    }
+
+    val handleVoiceClick: () -> Unit = {
+        if (hasAudioPermission) {
+            viewModel.toggleListening()
+        } else {
+            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
 
     Scaffold(
         containerColor = CanvasWarmWhite,
@@ -200,33 +240,73 @@ fun VoiceAnamnesisScreen(
             // Audio Guidance Playback Widget
             AudioPlaybackCard(
                 title = "Question Narration",
-                isPlaying = isPlayingAudio,
+                isPlaying = isSpeaking || isPlayingAudio,
                 progress = audioProgress,
                 onTogglePlay = { viewModel.toggleAudioPlayback() },
                 onReplay = { viewModel.replayAudio() },
                 onSeek = { viewModel.seekAudio(it) }
             )
 
-            Spacer(modifier = Modifier.height(20.dp))
+            // Voice Error / Permission Alert if present
+            if (voiceError != null) {
+                Spacer(modifier = Modifier.height(14.dp))
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = ErrorContainer,
+                    border = BorderStroke(1.dp, ClinicalError),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = OnErrorContainer,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = voiceError ?: "",
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                color = OnErrorContainer,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Voice Orb Visualizer & Real-time Transcript
             VoiceOrbVisualizer(
                 isListening = isListening,
+                isSpeaking = isSpeaking,
                 transcriptText = transcript,
-                onOrbClick = { viewModel.toggleListening() }
+                onOrbClick = handleVoiceClick
             )
 
             // Massive 80x80dp Circular Voice Action Button
             MassiveVoiceActionButton(
                 isListening = isListening,
-                onClick = { viewModel.toggleListening() },
+                onClick = handleVoiceClick,
                 modifier = Modifier.padding(vertical = 12.dp)
             )
 
             Text(
-                text = if (isListening) "Listening... Tap to confirm response" else "Tap microphone to speak",
+                text = when {
+                    isSpeaking -> "Assistant is speaking..."
+                    isListening -> "Listening... Tap to finish response"
+                    else -> "Tap microphone to speak"
+                },
                 style = MaterialTheme.typography.titleMedium.copy(
-                    color = if (isListening) DarkAmber else DeepSlateText,
+                    color = when {
+                        isSpeaking -> DeepMedicalTeal
+                        isListening -> DarkAmber
+                        else -> DeepSlateText
+                    },
                     fontWeight = FontWeight.Bold
                 ),
                 modifier = Modifier.padding(bottom = 20.dp)
