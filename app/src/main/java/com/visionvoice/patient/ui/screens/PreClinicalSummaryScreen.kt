@@ -21,10 +21,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Assignment
-import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.HealthAndSafety
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -40,7 +42,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -48,6 +49,7 @@ import androidx.compose.ui.unit.sp
 import com.visionvoice.patient.data.model.UrgencyLevel
 import com.visionvoice.patient.ui.components.AudioPlaybackCard
 import com.visionvoice.patient.ui.components.LargePillButton
+import com.visionvoice.patient.ui.theme.AmberContainer
 import com.visionvoice.patient.ui.theme.CanvasWarmWhite
 import com.visionvoice.patient.ui.theme.ClinicalError
 import com.visionvoice.patient.ui.theme.DarkAmber
@@ -65,8 +67,8 @@ import java.util.Locale
 
 /**
  * Screen 1: Pre-Clinical Summary (Stitch ID: dbc89635f1e84b4ba4a73a4e2225eb31)
- * Comprehensive triage evaluation synthesized from patient voice anamnesis,
- * presenting clinical urgency tier, symptoms, risk assessment, and acoustic playback.
+ * Comprehensive triage evaluation synthesized from patient 10-turn voice anamnesis,
+ * presenting clinical urgency tier, functional vision dominance, 6 dimensions, and additional information.
  */
 @Composable
 fun PreClinicalSummaryScreen(
@@ -223,6 +225,45 @@ fun PreClinicalSummaryScreen(
                             lineHeight = 30.sp
                         )
                     )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Functional Dominance Badge
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = SurfaceTeal,
+                        border = BorderStroke(1.dp, DeepMedicalTeal.copy(alpha = 0.4f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Visibility,
+                                contentDescription = null,
+                                tint = DeepMedicalTeal,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "Functional Vision Priority",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        color = DeepMedicalTeal,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                )
+                                Text(
+                                    text = "${profile.functionalDominance.label} (${profile.functionalDominance.workingDistance})",
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        color = DeepSlateText,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -240,7 +281,7 @@ fun PreClinicalSummaryScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Clinical Findings Detail Card
+            // Clinical Findings Detail Card (6 Dimensions + Additional Information)
             Card(
                 shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
@@ -260,34 +301,45 @@ fun PreClinicalSummaryScreen(
                     )
 
                     SummaryItemRow(
+                        icon = Icons.Default.Work,
+                        title = "Occupational Demands",
+                        value = "${profile.occupationalDemand.occupation} • ${profile.occupationalDemand.primaryDistance}"
+                    )
+
+                    SummaryItemRow(
                         icon = Icons.AutoMirrored.Filled.Assignment,
-                        title = "Primary Symptoms",
-                        value = profile.symptoms.joinToString(", ")
-                    )
-
-                    SummaryItemRow(
-                        icon = Icons.Default.AccessTime,
-                        title = "Reported Duration",
-                        value = profile.duration
-                    )
-
-                    SummaryItemRow(
-                        icon = Icons.Default.HealthAndSafety,
-                        title = "Affected Eye & Pain",
-                        value = "${profile.affectedEye} • ${profile.painLevel}"
+                        title = "Primary & Refractive Symptoms",
+                        value = (profile.refractiveSymptoms.ifEmpty { profile.symptoms }).joinToString(", ")
                     )
 
                     SummaryItemRow(
                         icon = Icons.Default.Warning,
-                        title = "Photophobia (Light Glare)",
-                        value = if (profile.photophobia) "Noticeable light sensitivity" else "No photophobia reported"
+                        title = "Environmental & Light Hazards",
+                        value = (profile.environmentalHazards + listOf("Screen: ${profile.digitalAndLighting.dailyScreenHours}")).joinToString(", ")
                     )
 
                     SummaryItemRow(
                         icon = Icons.Default.HealthAndSafety,
-                        title = "Underlying Risk Factors",
-                        value = if (profile.riskFactors.isNotEmpty()) profile.riskFactors.joinToString(", ") else "None declared"
+                        title = "Systemic Medical History",
+                        value = profile.systemicHistory.relevantNotes
                     )
+
+                    if (profile.pathologyIndicators.isNotEmpty()) {
+                        SummaryItemRow(
+                            icon = Icons.Default.Warning,
+                            title = "Pathology Red Flags",
+                            value = profile.pathologyIndicators.joinToString(", ")
+                        )
+                    }
+
+                    // Turn 9: Additional Information
+                    if (profile.additionalInformation.isNotEmpty()) {
+                        SummaryItemRow(
+                            icon = Icons.Default.Info,
+                            title = "Additional Information",
+                            value = profile.additionalInformation.joinToString(" • ")
+                        )
+                    }
                 }
             }
 
