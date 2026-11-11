@@ -8,6 +8,8 @@ import com.visionvoice.patient.ai.TurnQuestion
 import com.visionvoice.patient.data.model.ChatMessage
 import com.visionvoice.patient.data.model.MessageSender
 import com.visionvoice.patient.data.model.VisionProfile
+import com.visionvoice.patient.data.repository.ScreeningRepository
+import com.visionvoice.patient.data.repository.SyncStatus
 import com.visionvoice.patient.voice.VoiceManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,9 +21,12 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
 
     val voiceManager = VoiceManager(application)
     val geminiService = GeminiAnamnesisService()
+    val repository = ScreeningRepository(application)
 
     private val _profile = MutableStateFlow(VisionProfile())
     val profile: StateFlow<VisionProfile> = _profile.asStateFlow()
+
+    val syncStatus: StateFlow<SyncStatus> = repository.syncStatus
 
     val tenTurnQuestions: List<TurnQuestion> = geminiService.fallbackTenTurnQuestions
 
@@ -151,10 +156,18 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
                 baseProfile = _profile.value
             )
             _profile.value = updatedProfile
+            repository.saveProfile(updatedProfile)
         } catch (e: Exception) {
-            // Keep existing base profile
+            // Keep existing base profile and persist
+            repository.saveProfile(_profile.value)
         } finally {
             _isAiThinking.value = false
+        }
+    }
+
+    fun persistCurrentProfile() {
+        viewModelScope.launch {
+            repository.saveProfile(_profile.value)
         }
     }
 

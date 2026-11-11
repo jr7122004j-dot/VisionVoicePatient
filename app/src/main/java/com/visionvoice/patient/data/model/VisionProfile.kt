@@ -110,6 +110,14 @@ data class VisionProfile(
             )
         )
     }
+
+    /**
+     * GZIP + URL-safe Base64 compressed payload with "VV1:" protocol header.
+     * Shrinks QR complexity by ~70% to ensure instant scanning in low light.
+     */
+    fun toCompressedHandoffPayload(): String {
+        return com.visionvoice.patient.util.QrPayloadCompressor.compress(toHandoffPayload())
+    }
 }
 
 @Serializable
