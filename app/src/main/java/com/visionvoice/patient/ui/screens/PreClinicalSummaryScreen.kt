@@ -348,7 +348,10 @@ fun PreClinicalSummaryScreen(
             // Primary CTA: Generate Secure QR Handoff
             LargePillButton(
                 text = "Generate Secure QR Handoff",
-                onClick = onNavigateToQr,
+                onClick = {
+                    viewModel.persistCurrentProfile()
+                    onNavigateToQr()
+                },
                 containerColor = DeepMedicalTeal
             )
 

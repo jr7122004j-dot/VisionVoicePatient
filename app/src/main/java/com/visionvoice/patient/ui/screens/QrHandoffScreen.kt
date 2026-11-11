@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Share
@@ -60,6 +61,7 @@ import com.visionvoice.patient.ui.theme.CanvasWarmWhite
 import com.visionvoice.patient.ui.theme.DeepMedicalTeal
 import com.visionvoice.patient.ui.theme.DeepSlateText
 import com.visionvoice.patient.ui.theme.OutlineSlate
+import com.visionvoice.patient.ui.theme.SuccessEmerald
 import com.visionvoice.patient.ui.theme.SurfaceContainerLowest
 import com.visionvoice.patient.ui.theme.SurfaceTeal
 import com.visionvoice.patient.ui.viewmodel.ScreeningViewModel
@@ -80,6 +82,7 @@ fun QrHandoffScreen(
     modifier: Modifier = Modifier
 ) {
     val profile by viewModel.profile.collectAsState()
+    val syncStatus by viewModel.syncStatus.collectAsState()
     val scrollState = rememberScrollState()
 
     var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
@@ -87,7 +90,7 @@ fun QrHandoffScreen(
 
     LaunchedEffect(profile) {
         withContext(Dispatchers.Default) {
-            val payload = profile.toHandoffPayload()
+            val payload = profile.toCompressedHandoffPayload()
             val bitmap = QrCodeGenerator.generateQrBitmap(payload, size = 640)
             qrBitmap = bitmap
             isGenerating = false
@@ -278,12 +281,38 @@ fun QrHandoffScreen(
                     }
 
                     Text(
-                        text = "This QR code embeds the full clinical assessment. No internet connection is needed for the clinic scanner to read it.",
+                        text = "This QR code embeds the full clinical assessment in compressed VV1 format (~70% smaller). No internet connection is needed for the clinic scanner to read it.",
                         style = MaterialTheme.typography.bodyMedium.copy(
                             color = DeepSlateText.copy(alpha = 0.8f),
                             lineHeight = 26.sp
                         )
                     )
+
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = SurfaceTeal,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = SuccessEmerald,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = syncStatus.label,
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    color = DeepMedicalTeal,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            )
+                        }
+                    }
                 }
             }
 
