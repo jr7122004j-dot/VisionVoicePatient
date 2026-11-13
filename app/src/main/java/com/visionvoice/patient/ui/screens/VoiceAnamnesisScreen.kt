@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -38,6 +39,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -90,6 +93,7 @@ fun VoiceAnamnesisScreen(
     val isSpeaking by viewModel.isSpeaking.collectAsState()
     val isAiThinking by viewModel.isAiThinking.collectAsState()
     val transcript by viewModel.voiceTranscript.collectAsState()
+    val rmsDb by viewModel.voiceRmsDb.collectAsState()
     val isPlayingAudio by viewModel.isPlayingAudio.collectAsState()
     val audioProgress by viewModel.audioProgress.collectAsState()
     val voiceError by viewModel.voiceError.collectAsState()
@@ -122,6 +126,11 @@ fun VoiceAnamnesisScreen(
         if (isGranted) {
             viewModel.toggleListening()
         }
+    }
+
+    // Automatically trigger audio prompt when screen opens or when turn changes
+    LaunchedEffect(currentTurn) {
+        viewModel.triggerAudioGuidance(activePromptText)
     }
 
     val handleVoiceClick: () -> Unit = {
@@ -309,19 +318,32 @@ fun VoiceAnamnesisScreen(
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 color = OnErrorContainer,
                                 fontWeight = FontWeight.SemiBold
-                            )
+                            ),
+                            modifier = Modifier.weight(1f)
                         )
+                        IconButton(
+                            onClick = { viewModel.clearVoiceError() },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Dismiss error",
+                                tint = OnErrorContainer,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Voice Orb Visualizer & Real-time Transcript
+            // Voice Orb Visualizer & Real-time Transcript with dynamic audio level
             VoiceOrbVisualizer(
                 isListening = isListening,
                 isSpeaking = isSpeaking,
                 transcriptText = transcript,
+                rmsDb = rmsDb,
                 onOrbClick = handleVoiceClick
             )
 
@@ -390,7 +412,75 @@ fun VoiceAnamnesisScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(28.dp))
+
+            // Recent Conversation Drawer / Collapsible History Card
+            if (profile.chatHistory.isNotEmpty()) {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = SurfaceTeal,
+                    border = BorderStroke(1.5.dp, DeepMedicalTeal.copy(alpha = 0.35f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(bottom = 10.dp)
+                        ) {
+                            Text(
+                                text = "Conversation History (${profile.chatHistory.size} exchanges)",
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    color = DeepMedicalTeal,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            )
+                        }
+
+                        // Display last 3 messages for quick clinical context
+                        val recentMessages = profile.chatHistory.takeLast(4)
+                        recentMessages.forEach { msg ->
+                            val isAssistant = msg.sender == MessageSender.AI_ASSISTANT
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = if (isAssistant) Arrangement.Start else Arrangement.End
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(
+                                        topStart = 14.dp,
+                                        topEnd = 14.dp,
+                                        bottomStart = if (isAssistant) 2.dp else 14.dp,
+                                        bottomEnd = if (isAssistant) 14.dp else 2.dp
+                                    ),
+                                    color = if (isAssistant) SurfaceContainerLowest else DeepMedicalTeal,
+                                    border = if (isAssistant) BorderStroke(1.dp, OutlineSlate) else null,
+                                    modifier = Modifier.fillMaxWidth(0.88f)
+                                ) {
+                                    Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                        Text(
+                                            text = if (isAssistant) "Assistant" else "You",
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                color = if (isAssistant) DeepMedicalTeal else Color.White.copy(alpha = 0.85f),
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = msg.text,
+                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                color = if (isAssistant) DeepSlateText else Color.White
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+            }
 
             // Primary Navigation CTA
             LargePillButton(

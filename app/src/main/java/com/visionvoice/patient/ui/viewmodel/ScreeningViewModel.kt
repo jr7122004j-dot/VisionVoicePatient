@@ -39,6 +39,7 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
     val isListening: StateFlow<Boolean> = voiceManager.isListening
     val isSpeaking: StateFlow<Boolean> = voiceManager.isSpeaking
     val voiceTranscript: StateFlow<String> = voiceManager.liveTranscript
+    val voiceRmsDb: StateFlow<Float> = voiceManager.rmsDb
     val voiceError: StateFlow<String?> = voiceManager.voiceError
 
     private val _isPlayingAudio = MutableStateFlow(false)
@@ -96,6 +97,10 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
         }
+    }
+
+    fun clearVoiceError() {
+        voiceManager.clearError()
     }
 
     fun submitVoiceResponse(text: String) {

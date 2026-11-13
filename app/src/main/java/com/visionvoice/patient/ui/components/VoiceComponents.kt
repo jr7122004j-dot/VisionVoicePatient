@@ -70,6 +70,7 @@ fun VoiceOrbVisualizer(
     isListening: Boolean,
     isSpeaking: Boolean = false,
     transcriptText: String,
+    rmsDb: Float = 0f,
     onOrbClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -84,6 +85,10 @@ fun VoiceOrbVisualizer(
         ),
         label = "orbPulse"
     )
+
+    // Dynamic audio level responsiveness when listening
+    val voiceLevelFactor = if (isListening) (rmsDb.coerceIn(0f, 10f) / 10f) * 0.15f else 0f
+    val dynamicScale = pulseScale + voiceLevelFactor
 
     val activeColor = if (isListening) WarmAmber else DeepMedicalTeal
 
@@ -102,13 +107,14 @@ fun VoiceOrbVisualizer(
                 Box(
                     modifier = Modifier
                         .size(124.dp)
-                        .scale(pulseScale)
+                        .scale(dynamicScale)
                         .clip(CircleShape)
                         .background(activeColor.copy(alpha = 0.22f))
                 )
                 Box(
                     modifier = Modifier
                         .size(110.dp)
+                        .scale(dynamicScale * 0.95f)
                         .clip(CircleShape)
                         .background(activeColor.copy(alpha = 0.35f))
                 )
@@ -169,20 +175,29 @@ fun VoiceOrbVisualizer(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                        imageVector = if (isListening) Icons.Default.Mic else Icons.AutoMirrored.Filled.VolumeUp,
                         contentDescription = null,
                         tint = if (isListening) WarmAmber else DeepMedicalTeal,
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = transcriptText,
-                        style = MaterialTheme.typography.bodyLarge.copy(
-                            color = DeepSlateText,
-                            fontWeight = FontWeight.Medium
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (isListening) "Listening to you..." else "Captured Response",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = if (isListening) DarkAmber else DeepMedicalTeal,
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = transcriptText,
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                color = DeepSlateText,
+                                fontWeight = FontWeight.Medium
+                            )
+                        )
+                    }
                 }
             }
         }
