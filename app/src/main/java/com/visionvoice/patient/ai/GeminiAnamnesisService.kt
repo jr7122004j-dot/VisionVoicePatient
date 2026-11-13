@@ -45,7 +45,7 @@ class GeminiAnamnesisService(
         TurnQuestion(
             turn = 1,
             title = "Occupation & Primary Needs",
-            promptHindi = "नमस्ते! मैं आपका विज़न-वॉयस सहायक हूँ। आप रोज़ाना क्या काम करते हैं और आपको देखने में मुख्य परेशानी क्या हो रही है?",
+            promptHindi = "नमस्ते! मैं आपकी विज़न-वॉयस सहायिका हूँ। आप रोज़ाना क्या काम करते हैं और आपको देखने में मुख्य परेशानी क्या हो रही है?",
             promptEnglish = "Hello! I am your VisionVoice assistant. What daily work or occupation do you do, and what is your main visual difficulty?",
             hints = listOf("खेत में काम / Farming", "सिलाई व बुनाई / Tailoring", "दुकान / Office Desk", "ड्राइविंग / Driving")
         ),
@@ -119,7 +119,7 @@ class GeminiAnamnesisService(
         if (isLiveApiConfigured) {
             try {
                 generativeModel = GenerativeModel(
-                    modelName = "gemini-1.5-flash",
+                    modelName = "gemini-flash-latest",
                     apiKey = apiKey,
                     generationConfig = generationConfig {
                         temperature = 0.4f
@@ -139,8 +139,11 @@ class GeminiAnamnesisService(
 
     private fun buildSystemInstruction(language: String): String {
         return """
-            You are VisionVoice, an empathetic, pre-clinical ophthalmic screening assistant in rural India.
+            You are VisionVoice, an empathetic, female pre-clinical ophthalmic screening assistant (क्लिनिकल सहायिका) in rural India.
             Your purpose is to conduct a gentle, 10-turn adaptive voice anamnesis in $language.
+            
+            PERSONA & VOICE GENDER RULES:
+            - You are female. When conversing in Hindi or Indian languages, always use female first-person grammatical agreements (e.g., 'मैं आपकी सहायिका हूँ', 'मैं समझ सकती हूँ', 'मैं आपकी बात दर्ज कर रही हूँ').
             
             CLINICAL RULES:
             1. NEVER diagnose the patient or prescribe medication. (Do NOT say "You have cataract" or "You have glaucoma". Instead say: "I have recorded this for the doctor to examine.")
@@ -171,10 +174,11 @@ class GeminiAnamnesisService(
                 )
                 val reply = response?.text?.trim()
                 if (!reply.isNullOrBlank()) {
+                    android.util.Log.d("GeminiAnamnesis", "Received reply from Gemini: $reply")
                     return@withContext reply
                 }
             } catch (e: Exception) {
-                // Fall back to rule-based response
+                android.util.Log.e("GeminiAnamnesis", "Gemini API error, falling back to rule-based prompt", e)
             }
         }
 
