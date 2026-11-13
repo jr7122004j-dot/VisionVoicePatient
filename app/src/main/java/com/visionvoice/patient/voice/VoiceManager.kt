@@ -124,6 +124,21 @@ class VoiceManager(private val context: Context) : RecognitionListener, TextToSp
             // Fallback to English if exact dialect is not available
             textToSpeech?.setLanguage(Locale.ENGLISH)
         }
+
+        // Prefer female voice if available for the given locale
+        try {
+            val femaleVoice = textToSpeech?.voices?.firstOrNull { voice ->
+                voice.locale.language.equals(locale.language, ignoreCase = true) &&
+                    (voice.name.contains("female", ignoreCase = true) ||
+                     voice.name.contains("-f-", ignoreCase = true) ||
+                     voice.features?.contains("female") == true)
+            }
+            if (femaleVoice != null) {
+                textToSpeech?.voice = femaleVoice
+            }
+        } catch (e: Exception) {
+            // Ignore and use default locale voice
+        }
     }
 
     private fun mapLanguageNameToLocale(name: String): Locale {
