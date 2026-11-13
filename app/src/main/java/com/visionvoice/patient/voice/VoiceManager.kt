@@ -114,6 +114,10 @@ class VoiceManager(private val context: Context) : RecognitionListener, TextToSp
         }
     }
 
+    fun clearError() {
+        _voiceError.value = null
+    }
+
     private fun applyLocaleToTts(locale: Locale) {
         val result = textToSpeech?.setLanguage(locale)
         if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
