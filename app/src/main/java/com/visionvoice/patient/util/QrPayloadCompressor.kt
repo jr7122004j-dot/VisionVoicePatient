@@ -1,6 +1,5 @@
 package com.visionvoice.patient.util
 
-import android.util.Base64
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
@@ -22,10 +21,10 @@ object QrPayloadCompressor {
                 gzip.write(json.toByteArray(StandardCharsets.UTF_8))
             }
             val compressedBytes = byteOut.toByteArray()
-            val base64 = Base64.encodeToString(compressedBytes, Base64.NO_WRAP or Base64.URL_SAFE)
+            val base64 = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(compressedBytes)
             "$PROTOCOL_PREFIX$base64"
         } catch (e: Exception) {
-            // Graceful fallback to raw JSON
+            // Fallback to raw JSON if compression fails
             json
         }
     }
@@ -34,7 +33,7 @@ object QrPayloadCompressor {
         return try {
             if (!payload.startsWith(PROTOCOL_PREFIX)) return payload
             val base64Data = payload.removePrefix(PROTOCOL_PREFIX)
-            val compressedBytes = Base64.decode(base64Data, Base64.NO_WRAP or Base64.URL_SAFE)
+            val compressedBytes = java.util.Base64.getUrlDecoder().decode(base64Data)
             val byteIn = ByteArrayInputStream(compressedBytes)
             GZIPInputStream(byteIn).bufferedReader(StandardCharsets.UTF_8).use {
                 it.readText()
