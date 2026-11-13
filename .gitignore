@@ -14,4 +14,7 @@
 .cxx
 local.properties
 /.idea/deviceManager.xml
+/.idea/appInsightsSettings.xml
 /.ai/
+google-services.json
+
