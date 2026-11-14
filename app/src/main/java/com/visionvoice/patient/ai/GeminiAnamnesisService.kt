@@ -20,6 +20,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.io.File
 
 /**
  * Service orchestrating the adaptive 10-turn AI Anamnesis using Google Gemini API.
@@ -171,6 +172,81 @@ class GeminiAnamnesisService(
             reply
         } else {
             throw java.io.IOException("Gemini response timed out or returned empty")
+        }
+    }
+
+    suspend fun sendPatientAudio(
+        turnIndex: Int,
+        audioFile: File,
+        language: String
+    ): Pair<String, String> = withContext(Dispatchers.IO) {
+        if (!isLiveApiConfigured) {
+            throw IllegalStateException("Gemini API is not configured")
+        }
+
+        if (activeChat == null) {
+            initializeSession(currentLanguage)
+        }
+
+        val chat = activeChat ?: throw java.io.IOException("Active Gemini chat session is unavailable")
+
+        val audioBytes = audioFile.readBytes()
+        val audioPrompt = """
+            The patient has spoken their response in audio for turn ${turnIndex + 1} of the clinical screening.
+            The selected language is $language.
+            
+            Task:
+            1. Listen to the audio carefully and transcribe EXACTLY what the patient said.
+               STRICT GUARDRAIL: If the audio is silent, inaudible, static noise, or no human speech is heard, DO NOT hallucinate or invent a response. Set PATIENT_TRANSCRIPT to "[No speech detected]" and set ASSISTANT_REPLY to gently ask the patient to speak again in 1 short sentence in $language.
+            2. If human speech is heard, formulate your gentle, 1-2 sentence response as the female VisionVoice clinical screening assistant (क्लिनिकल सहायिका) in $language.
+            
+            Format your response EXACTLY like this:
+            PATIENT_TRANSCRIPT: <the patient's words in $language, or [No speech detected]>
+            ASSISTANT_REPLY: <your 1-2 sentence reply in $language>
+        """.trimIndent()
+
+        android.util.Log.d("GeminiAnamnesis", "Sending audio message to Gemini (${audioBytes.size} bytes)")
+        val reply = kotlinx.coroutines.withTimeoutOrNull(15000L) {
+            val response = chat.sendMessage(
+                content {
+                    blob("audio/mp4", audioBytes)
+                    text(audioPrompt)
+                }
+            )
+            response.text?.trim()
+        }
+
+        if (!reply.isNullOrBlank()) {
+            android.util.Log.i("GeminiAnamnesis", "⚡ Received LIVE reply from Gemini for audio: $reply")
+            var transcript = ""
+            var assistantReply = ""
+
+            val lines = reply.lines()
+            for (line in lines) {
+                val trimmed = line.trim()
+                when {
+                    trimmed.startsWith("PATIENT_TRANSCRIPT:", ignoreCase = true) -> {
+                        transcript = trimmed.substringAfter(":").trim()
+                    }
+                    trimmed.startsWith("ASSISTANT_REPLY:", ignoreCase = true) -> {
+                        assistantReply = trimmed.substringAfter(":").trim()
+                    }
+                }
+            }
+
+            if (assistantReply.isBlank()) {
+                assistantReply = reply
+                    .replace(Regex("(?i)PATIENT_TRANSCRIPT:.*"), "")
+                    .replace(Regex("(?i)ASSISTANT_REPLY:"), "")
+                    .trim()
+            }
+            if (transcript.isBlank()) {
+                transcript = "Patient voice response"
+            }
+
+            Pair(transcript, assistantReply)
+        } else {
+            throw java.io.IOException("Gemini response timed out or returned empty for audio")
         }
     }
 
