@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 
 class ScreeningViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -70,6 +71,10 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
     val voiceTranscript: StateFlow<String> = voiceManager.liveTranscript
     val voiceRmsDb: StateFlow<Float> = voiceManager.rmsDb
     val voiceError: StateFlow<String?> = voiceManager.voiceError
+
+    val hasRecordedAudio: StateFlow<Boolean> = voiceManager.hasRecordedAudio
+    val isPatientAudioPlaying: StateFlow<Boolean> = voiceManager.isPatientAudioPlaying
+    val recordedAudioDurationMs: StateFlow<Int> = voiceManager.recordedAudioDurationMs
 
     private val _isPlayingAudio = MutableStateFlow(false)
     val isPlayingAudio: StateFlow<Boolean> = _isPlayingAudio.asStateFlow()
@@ -234,10 +239,115 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
         if (voiceManager.isListening.value) {
             voiceManager.stopListening()
         } else {
+            voiceManager.discardRecordedAudio()
             voiceManager.startListening { resultText ->
-                if (resultText.isNotBlank()) {
-                    submitVoiceResponse(resultText)
+                // On speech recognition result, stored in liveTranscript
+            }
+        }
+    }
+
+    fun toggleRecordedAudioPlayback() {
+        if (voiceManager.isPatientAudioPlaying.value) {
+            voiceManager.stopAudioPlayback()
+        } else {
+            voiceManager.playRecordedAudio()
+        }
+    }
+
+    fun discardRecordedAudio() {
+        voiceManager.discardRecordedAudio()
+    }
+
+    fun submitCurrentResponse() {
+        if (_isAiThinking.value || _isConnectingToAi.value) return
+
+        val transcriptText = voiceManager.liveTranscript.value.trim()
+        val audioFile = voiceManager.recordedAudioFile
+        val durationMs = voiceManager.recordedAudioDurationMs.value
+
+        if (transcriptText.isNotBlank()) {
+            voiceManager.discardRecordedAudio()
+            submitVoiceResponse(transcriptText)
+        } else if (audioFile != null && audioFile.exists() && audioFile.length() > 0) {
+            submitAudioResponse(audioFile, durationMs)
+        }
+    }
+
+    fun submitAudioResponse(audioFile: File, durationMs: Int) {
+        if (_isAiThinking.value || _isConnectingToAi.value) return
+
+        val turn = _currentTurnIndex.value
+        _aiConnectionError.value = null
+        _isAiThinking.value = true
+
+        viewModelScope.launch {
+            val startTime = System.currentTimeMillis()
+            val maxRetryDurationMs = 30_000L
+            var result: Pair<String, String>? = null
+            var attempt = 0
+
+            while (System.currentTimeMillis() - startTime < maxRetryDurationMs && result == null) {
+                attempt++
+                try {
+                    if (attempt > 1) {
+                        _isConnectingToAi.value = true
+                        val elapsedSec = ((System.currentTimeMillis() - startTime) / 1000).toInt()
+                        val remainingSec = (30 - elapsedSec).coerceAtLeast(0)
+                        _aiConnectionStatus.value = "Connecting to AI Assistant... Retrying (${remainingSec}s)"
+                    }
+
+                    result = geminiService.sendPatientAudio(turn, audioFile, _profile.value.selectedLanguage)
+                } catch (e: Exception) {
+                    android.util.Log.w("ScreeningViewModel", "Attempt $attempt audio send failed: ${e.message}")
+                    _isConnectingToAi.value = true
+                    val elapsedSec = ((System.currentTimeMillis() - startTime) / 1000).toInt()
+                    val remainingSec = (30 - elapsedSec).coerceAtLeast(0)
+                    _aiConnectionStatus.value = "Connecting to AI Assistant... Retrying (${remainingSec}s)"
+
+                    if (System.currentTimeMillis() - startTime + 3000L < maxRetryDurationMs) {
+                        delay(3000L)
+                    } else {
+                        break
+                    }
                 }
+            }
+
+            _isAiThinking.value = false
+            _isConnectingToAi.value = false
+            _aiConnectionStatus.value = null
+
+            if (result != null) {
+                val (transcript, aiReply) = result
+                voiceManager.discardRecordedAudio()
+
+                val isSilence = transcript.contains("[No speech detected]", ignoreCase = true)
+                if (isSilence) {
+                    _profile.update { current ->
+                        current.copy(
+                            chatHistory = current.chatHistory +
+                                ChatMessage(sender = MessageSender.AI_ASSISTANT, text = aiReply)
+                        )
+                    }
+                    triggerAudioGuidance(aiReply)
+                } else {
+                    val displayText = transcript.ifBlank { "Spoken response" }
+                    _profile.update { current ->
+                        current.copy(
+                            chatHistory = current.chatHistory +
+                                ChatMessage(sender = MessageSender.PATIENT, text = displayText) +
+                                ChatMessage(sender = MessageSender.AI_ASSISTANT, text = aiReply)
+                        )
+                    }
+                    triggerAudioGuidance(aiReply)
+
+                    if (turn < turnTitles.lastIndex) {
+                        _currentTurnIndex.value = turn + 1
+                    } else {
+                        finalizeTriage()
+                    }
+                }
+            } else {
+                _aiConnectionError.value = "Internet connectivity is needed for VisionVoice AI. Please check your network connection and retry."
             }
         }
     }
@@ -344,6 +454,7 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun stopAudio() {
         voiceManager.stopSpeaking()
+        voiceManager.stopAudioPlayback()
         _isPlayingAudio.value = false
     }
 

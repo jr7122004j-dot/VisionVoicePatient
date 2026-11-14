@@ -2,6 +2,10 @@ package com.visionvoice.patient.voice
 
 import android.content.Context
 import android.content.Intent
+import android.media.MediaMetadataRetriever
+import android.media.MediaPlayer
+import android.media.MediaRecorder
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -10,16 +14,21 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.io.File
 import java.util.Locale
 import java.util.UUID
 
 /**
  * Native Voice Engine for VisionVoice Patient App.
- * Orchestrates on-device SpeechRecognizer (STT) and TextToSpeech (TTS)
- * with dynamic multilingual locale switching and synchronized state flows.
+ * Orchestrates:
+ * 1. Native MediaRecorder for capturing patient speech into a local audio file
+ * 2. MediaPlayer for instant patient audio playback ("Play My Audio")
+ * 3. SpeechRecognizer for live on-device speech-to-text preview
+ * 4. TextToSpeech for female clinical assistant voice guidance
  */
 class VoiceManager(private val context: Context) : RecognitionListener, TextToSpeech.OnInitListener {
 
@@ -29,11 +38,28 @@ class VoiceManager(private val context: Context) : RecognitionListener, TextToSp
     private var textToSpeech: TextToSpeech? = null
     private var isTtsInitialized = false
 
+    // Native audio recorder & player
+    private var mediaRecorder: MediaRecorder? = null
+    private var currentRecordingFile: File? = null
+    private var mediaPlayer: MediaPlayer? = null
+
     private val _isListening = MutableStateFlow(false)
     val isListening: StateFlow<Boolean> = _isListening.asStateFlow()
 
     private val _isSpeaking = MutableStateFlow(false)
     val isSpeaking: StateFlow<Boolean> = _isSpeaking.asStateFlow()
+
+    private val _hasRecordedAudio = MutableStateFlow(false)
+    val hasRecordedAudio: StateFlow<Boolean> = _hasRecordedAudio.asStateFlow()
+
+    private val _isPatientAudioPlaying = MutableStateFlow(false)
+    val isPatientAudioPlaying: StateFlow<Boolean> = _isPatientAudioPlaying.asStateFlow()
+
+    private val _recordedAudioDurationMs = MutableStateFlow(0)
+    val recordedAudioDurationMs: StateFlow<Int> = _recordedAudioDurationMs.asStateFlow()
+
+    val recordedAudioFile: File?
+        get() = currentRecordingFile
 
     private val _liveTranscript = MutableStateFlow("")
     val liveTranscript: StateFlow<String> = _liveTranscript.asStateFlow()
@@ -49,6 +75,23 @@ class VoiceManager(private val context: Context) : RecognitionListener, TextToSp
     private var onSpeechResultCallback: ((String) -> Unit)? = null
     private var onTtsDoneCallback: (() -> Unit)? = null
 
+    private val amplitudePollRunnable = object : Runnable {
+        override fun run() {
+            if (_isListening.value && mediaRecorder != null) {
+                try {
+                    val maxAmp = mediaRecorder?.maxAmplitude ?: 0
+                    if (maxAmp > 0) {
+                        val db = (maxAmp.toFloat() / 32767f) * 30f
+                        _rmsDb.value = db
+                    }
+                } catch (e: Exception) {
+                    // Ignore amplitude polling errors
+                }
+                mainHandler.postDelayed(this, 90)
+            }
+        }
+    }
+
     init {
         mainHandler.post {
             initSpeechRecognizer()
@@ -63,7 +106,7 @@ class VoiceManager(private val context: Context) : RecognitionListener, TextToSp
                 setRecognitionListener(this@VoiceManager)
             }
         } else {
-            _voiceError.value = "Speech recognition is not available on this device"
+            Log.w("VoiceManager", "Speech recognition service is not available on this device")
         }
     }
 
@@ -121,11 +164,9 @@ class VoiceManager(private val context: Context) : RecognitionListener, TextToSp
     private fun applyLocaleToTts(locale: Locale) {
         val result = textToSpeech?.setLanguage(locale)
         if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-            // Fallback to English if exact dialect is not available
             textToSpeech?.setLanguage(Locale.ENGLISH)
         }
 
-        // Prefer female voice if available for the given locale
         try {
             val femaleVoice = textToSpeech?.voices?.firstOrNull { voice ->
                 voice.locale.language.equals(locale.language, ignoreCase = true) &&
@@ -137,7 +178,7 @@ class VoiceManager(private val context: Context) : RecognitionListener, TextToSp
                 textToSpeech?.voice = femaleVoice
             }
         } catch (e: Exception) {
-            // Ignore and use default locale voice
+            // Ignore and use default voice
         }
     }
 
@@ -164,11 +205,40 @@ class VoiceManager(private val context: Context) : RecognitionListener, TextToSp
 
     fun startListening(onResult: (String) -> Unit) {
         stopSpeaking()
+        stopAudioPlayback()
         onSpeechResultCallback = onResult
         _voiceError.value = null
         _liveTranscript.value = ""
+        _hasRecordedAudio.value = false
 
         mainHandler.post {
+            // 1. Start native MediaRecorder audio capture
+            try {
+                val audioFile = File(context.cacheDir, "patient_recording_${System.currentTimeMillis()}.m4a")
+                currentRecordingFile = audioFile
+
+                mediaRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    MediaRecorder(context)
+                } else {
+                    @Suppress("DEPRECATION")
+                    MediaRecorder()
+                }.apply {
+                    setAudioSource(MediaRecorder.AudioSource.MIC)
+                    setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                    setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                    setAudioEncodingBitRate(128000)
+                    setAudioSamplingRate(44100)
+                    setOutputFile(audioFile.absolutePath)
+                    prepare()
+                    start()
+                }
+                _isListening.value = true
+                mainHandler.post(amplitudePollRunnable)
+            } catch (e: Exception) {
+                Log.w("VoiceManager", "MediaRecorder initialization notice: ${e.message}")
+            }
+
+            // 2. Also start SpeechRecognizer if available
             try {
                 if (speechRecognizer == null) {
                     initSpeechRecognizer()
@@ -186,26 +256,115 @@ class VoiceManager(private val context: Context) : RecognitionListener, TextToSp
                 speechRecognizer?.startListening(intent)
                 _isListening.value = true
             } catch (e: Exception) {
-                _isListening.value = false
-                _voiceError.value = "Error starting voice recognition: ${e.message}"
+                Log.w("VoiceManager", "SpeechRecognizer start notice: ${e.message}")
             }
         }
     }
 
     fun stopListening() {
         mainHandler.post {
+            mainHandler.removeCallbacks(amplitudePollRunnable)
+            _isListening.value = false
+            _rmsDb.value = 0f
+
+            // Stop MediaRecorder and finalize file
+            try {
+                mediaRecorder?.stop()
+            } catch (e: Exception) {
+                Log.w("VoiceManager", "MediaRecorder stop note: ${e.message}")
+            } finally {
+                try {
+                    mediaRecorder?.release()
+                } catch (e: Exception) {}
+                mediaRecorder = null
+            }
+
+            val file = currentRecordingFile
+            Log.i("VoiceManager", "stopListening: file=${file?.absolutePath}, exists=${file?.exists()}, length=${file?.length()}")
+            if (file != null && file.exists() && file.length() > 50) {
+                _hasRecordedAudio.value = true
+                try {
+                    val mmr = MediaMetadataRetriever()
+                    mmr.setDataSource(file.absolutePath)
+                    val durStr = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    _recordedAudioDurationMs.value = durStr?.toIntOrNull() ?: 0
+                    mmr.release()
+                } catch (e: Exception) {
+                    _recordedAudioDurationMs.value = 0
+                }
+            }
+
+            // Stop SpeechRecognizer safely
             try {
                 speechRecognizer?.stopListening()
             } catch (e: Exception) {
                 // Ignore safe teardown
-            } finally {
-                _isListening.value = false
             }
         }
     }
 
+    /**
+     * Plays back the patient's recorded audio via MediaPlayer.
+     */
+    fun playRecordedAudio(onComplete: (() -> Unit)? = null) {
+        val file = currentRecordingFile
+        if (file == null || !file.exists() || file.length() == 0L) {
+            return
+        }
+
+        stopAudioPlayback()
+        stopSpeaking()
+
+        try {
+            mediaPlayer = MediaPlayer().apply {
+                setDataSource(file.absolutePath)
+                prepare()
+                setOnCompletionListener {
+                    _isPatientAudioPlaying.value = false
+                    onComplete?.invoke()
+                }
+                start()
+            }
+            _isPatientAudioPlaying.value = true
+        } catch (e: Exception) {
+            Log.e("VoiceManager", "Error playing patient audio: ${e.message}", e)
+            _isPatientAudioPlaying.value = false
+        }
+    }
+
+    /**
+     * Stops playback of the patient's recorded audio.
+     */
+    fun stopAudioPlayback() {
+        try {
+            if (mediaPlayer?.isPlaying == true) {
+                mediaPlayer?.stop()
+            }
+        } catch (e: Exception) {}
+        try {
+            mediaPlayer?.release()
+        } catch (e: Exception) {}
+        mediaPlayer = null
+        _isPatientAudioPlaying.value = false
+    }
+
+    /**
+     * Discards the currently recorded audio and resets state.
+     */
+    fun discardRecordedAudio() {
+        stopAudioPlayback()
+        try {
+            currentRecordingFile?.delete()
+        } catch (e: Exception) {}
+        currentRecordingFile = null
+        _hasRecordedAudio.value = false
+        _recordedAudioDurationMs.value = 0
+        _liveTranscript.value = ""
+    }
+
     fun speak(text: String, onDone: (() -> Unit)? = null) {
         stopListening()
+        stopAudioPlayback()
         onTtsDoneCallback = onDone
 
         if (!isTtsInitialized) {
@@ -238,37 +397,48 @@ class VoiceManager(private val context: Context) : RecognitionListener, TextToSp
     }
 
     override fun onRmsChanged(rmsdB: Float) {
-        _rmsDb.value = rmsdB
+        if (_rmsDb.value == 0f) {
+            _rmsDb.value = rmsdB
+        }
     }
 
     override fun onBufferReceived(buffer: ByteArray?) {}
 
     override fun onEndOfSpeech() {
-        _isListening.value = false
+        // Do not prematurely stop listening; user controls tap-to-stop
     }
 
     override fun onError(error: Int) {
-        _isListening.value = false
         val message = when (error) {
-            SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
-            SpeechRecognizer.ERROR_CLIENT -> "Client-side recognition error"
+            SpeechRecognizer.ERROR_AUDIO -> "Audio recording notice"
+            SpeechRecognizer.ERROR_CLIENT -> "Client-side recognition notice"
             SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission required"
             SpeechRecognizer.ERROR_NETWORK -> "Network connection required for speech service"
             SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network timeout"
-            SpeechRecognizer.ERROR_NO_MATCH -> "No speech match detected. Please try again."
+            SpeechRecognizer.ERROR_NO_MATCH -> "No speech match detected"
             SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Recognition service busy"
-            SpeechRecognizer.ERROR_SERVER -> "Recognition server error"
+            SpeechRecognizer.ERROR_SERVER -> "Recognition server notice"
             SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech heard"
-            else -> "Speech recognition error ($error)"
+            else -> "Speech recognition notice ($error)"
         }
-        // Don't flag NO_MATCH or SPEECH_TIMEOUT as a fatal error, just inform quietly
-        if (error != SpeechRecognizer.ERROR_NO_MATCH && error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+
+        Log.w("VoiceManager", "SpeechRecognizer notice: $error ($message)")
+
+        // If mediaRecorder is active, keep recording session alive for patient!
+        if (mediaRecorder != null) {
+            return
+        }
+
+        _isListening.value = false
+        if (!_hasRecordedAudio.value &&
+            error != SpeechRecognizer.ERROR_CLIENT &&
+            error != SpeechRecognizer.ERROR_NO_MATCH &&
+            error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
             _voiceError.value = message
         }
     }
 
     override fun onResults(results: Bundle?) {
-        _isListening.value = false
         val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
         val bestResult = matches?.firstOrNull()?.trim() ?: ""
         if (bestResult.isNotEmpty()) {
@@ -288,6 +458,8 @@ class VoiceManager(private val context: Context) : RecognitionListener, TextToSp
     override fun onEvent(eventType: Int, params: Bundle?) {}
 
     fun destroy() {
+        stopAudioPlayback()
+        discardRecordedAudio()
         mainHandler.post {
             try {
                 speechRecognizer?.destroy()

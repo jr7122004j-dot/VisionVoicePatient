@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -14,11 +15,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -27,8 +30,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ButtonDefaults
@@ -63,6 +71,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.visionvoice.patient.data.model.ChatMessage
 import com.visionvoice.patient.data.model.MessageSender
+import com.visionvoice.patient.ui.components.AppInfoDialog
 import com.visionvoice.patient.ui.components.LanguageOnboardingDialog
 import com.visionvoice.patient.ui.components.LargePillButton
 import com.visionvoice.patient.ui.components.PulsatingVoicePill
@@ -106,6 +115,9 @@ fun VoiceAnamnesisScreen(
     val rmsDb by viewModel.voiceRmsDb.collectAsState()
     val isPlayingAudio by viewModel.isPlayingAudio.collectAsState()
     val voiceError by viewModel.voiceError.collectAsState()
+    val hasRecordedAudio by viewModel.hasRecordedAudio.collectAsState()
+    val isPatientAudioPlaying by viewModel.isPatientAudioPlaying.collectAsState()
+    val recordedAudioDurationMs by viewModel.recordedAudioDurationMs.collectAsState()
     val isConnectingToAi by viewModel.isConnectingToAi.collectAsState()
     val aiConnectionStatus by viewModel.aiConnectionStatus.collectAsState()
     val aiConnectionError by viewModel.aiConnectionError.collectAsState()
@@ -114,9 +126,9 @@ fun VoiceAnamnesisScreen(
     val isOnboardingCompleted = viewModel.isOnboardingCompleted
 
     val totalTurns = viewModel.turnTitles.size
-    val currentTitle = viewModel.getCurrentTurnTitle()
 
     val listState = rememberLazyListState()
+    var showAppInfoDialog by remember { mutableStateOf(false) }
 
     var hasAudioPermission by remember {
         mutableStateOf(
@@ -152,7 +164,11 @@ fun VoiceAnamnesisScreen(
     }
 
     val handleVoiceClick: () -> Unit = {
-        if (hasAudioPermission) {
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) {
             viewModel.toggleListening()
         } else {
             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -162,80 +178,91 @@ fun VoiceAnamnesisScreen(
     Scaffold(
         containerColor = CanvasWarmWhite,
         topBar = {
+            val currentLangObj = remember(profile.selectedLanguage) {
+                SupportedLanguages.find { it.displayName.equals(profile.selectedLanguage, ignoreCase = true) }
+                    ?: SupportedLanguages.first()
+            }
+
             Row(
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                if (showBackButton) {
-                    IconButton(
-                        onClick = {
-                            viewModel.stopAudio()
-                            onNavigateBack()
-                        },
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(SurfaceContainerLowest)
-                            .border(1.5.dp, OutlineSlate, CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = DeepMedicalTeal,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                } else {
-                    Surface(
-                        shape = CircleShape,
-                        color = SurfaceTeal,
-                        border = BorderStroke(1.5.dp, DeepMedicalTeal.copy(alpha = 0.35f)),
-                        modifier = Modifier.size(42.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
+                // Left: Vision Voice Pill (clickable, opens info dialog)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (showBackButton) {
+                        IconButton(
+                            onClick = {
+                                viewModel.stopAudio()
+                                onNavigateBack()
+                            },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(SurfaceTeal)
+                                .border(1.dp, DeepMedicalTeal.copy(alpha = 0.25f), CircleShape)
+                        ) {
                             Icon(
-                                imageVector = Icons.Default.Visibility,
-                                contentDescription = "VisionVoice",
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
                                 tint = DeepMedicalTeal,
-                                modifier = Modifier.size(22.dp)
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(9999.dp),
+                        color = SurfaceTeal,
+                        border = BorderStroke(1.dp, DeepMedicalTeal.copy(alpha = 0.25f)),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(9999.dp))
+                            .clickable { showAppInfoDialog = true }
+                            .semantics {
+                                contentDescription = "About Vision Voice"
+                            }
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(start = 5.dp, end = 14.dp, top = 4.dp, bottom = 4.dp)
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = Color.White,
+                                border = BorderStroke(1.dp, DeepMedicalTeal.copy(alpha = 0.2f)),
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Visibility,
+                                        contentDescription = "Vision Voice",
+                                        tint = DeepMedicalTeal,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Vision Voice",
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    color = DeepMedicalTeal,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Voice Anamnesis",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            color = DeepSlateText,
-                            fontWeight = FontWeight.Bold
-                        )
-                    )
-                    Text(
-                        text = "Turn ${currentTurn + 1} of $totalTurns • $currentTitle",
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            color = DeepMedicalTeal,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    )
-                }
-
-                // Language Selector Quick Pill in Top Bar
-                val currentLangObj = remember(profile.selectedLanguage) {
-                    SupportedLanguages.find { it.displayName.equals(profile.selectedLanguage, ignoreCase = true) }
-                        ?: SupportedLanguages.first()
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
+                // Right: Language Selector Pill
                 Surface(
                     shape = RoundedCornerShape(9999.dp),
                     color = SurfaceTeal,
-                    border = BorderStroke(1.5.dp, DeepMedicalTeal.copy(alpha = 0.35f)),
+                    border = BorderStroke(1.dp, DeepMedicalTeal.copy(alpha = 0.25f)),
                     modifier = Modifier
                         .clip(RoundedCornerShape(9999.dp))
                         .clickable {
@@ -247,22 +274,29 @@ fun VoiceAnamnesisScreen(
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Language,
                             contentDescription = null,
-                            tint = DeepMedicalTeal,
-                            modifier = Modifier.size(15.dp)
+                            tint = DeepSlateText,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (currentLangObj.code == "en") "English (India)" else "${currentLangObj.displayName} (${currentLangObj.nativeScript})",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                color = DeepSlateText,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp
+                            )
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "${currentLangObj.nativeScript} ▾",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                color = DeepMedicalTeal,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Change language",
+                            tint = DeepSlateText.copy(alpha = 0.7f),
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
@@ -276,30 +310,28 @@ fun VoiceAnamnesisScreen(
                 .fillMaxSize()
                 .padding(horizontal = 16.dp, vertical = 6.dp)
         ) {
-            // 10-Step Progress Track
-            Row(
+            // Sleek Continuous Progress Bar matching design mockup
+            val progressFraction = ((currentTurn + 1).toFloat() / totalTurns.toFloat()).coerceIn(0.05f, 1f)
+            val animatedProgress by animateFloatAsState(
+                targetValue = progressFraction,
+                label = "screening_progress"
+            )
+
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    .padding(horizontal = 4.dp, vertical = 6.dp)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(9999.dp))
+                    .background(OutlineSlate.copy(alpha = 0.35f))
             ) {
-                repeat(totalTurns) { idx ->
-                    val isPast = idx < currentTurn
-                    val isCurrent = idx == currentTurn
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(5.dp)
-                            .clip(RoundedCornerShape(9999.dp))
-                            .background(
-                                when {
-                                    isPast -> DeepMedicalTeal
-                                    isCurrent -> WarmAmber
-                                    else -> OutlineSlate.copy(alpha = 0.4f)
-                                }
-                            )
-                    )
-                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(animatedProgress)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(9999.dp))
+                        .background(WarmAmber)
+                )
             }
 
             // Error alert if present
@@ -588,27 +620,135 @@ fun VoiceAnamnesisScreen(
                             .border(BorderStroke(1.dp, OutlineSlate.copy(alpha = 0.4f)))
                             .padding(horizontal = 10.dp, vertical = 8.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            // Left: Agent Speaking Indicator (Orange glass wave)
-                            PulsatingVoicePill(
-                                isActive = isSpeaking || isPlayingAudio,
-                                isHuman = false,
-                                label = if (isSpeaking || isPlayingAudio) "Agent Speaking" else "Hear Voice",
-                                onClick = { viewModel.replayAudio() }
-                            )
+                        if (hasRecordedAudio) {
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = SurfaceTeal,
+                                border = BorderStroke(1.dp, DeepMedicalTeal.copy(alpha = 0.35f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    // Play / Pause Circle Button
+                                    IconButton(
+                                        onClick = { viewModel.toggleRecordedAudioPlayback() },
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .clip(CircleShape)
+                                            .background(DeepMedicalTeal)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isPatientAudioPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                            contentDescription = if (isPatientAudioPlaying) "Pause My Audio" else "Play My Audio",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
 
-                            // Right: Human Speaking Indicator (Blue glass wave)
-                            PulsatingVoicePill(
-                                isActive = isListening,
-                                isHuman = true,
-                                label = if (isListening) "Listening..." else "Tap to Speak",
-                                rmsDb = rmsDb,
-                                onClick = handleVoiceClick
-                            )
+                                    Spacer(modifier = Modifier.width(10.dp))
+
+                                    // Status / Duration text
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable { viewModel.toggleRecordedAudioPlayback() }
+                                    ) {
+                                        Text(
+                                            text = if (isPatientAudioPlaying) "Playing Your Audio..." else "Play My Audio",
+                                            style = MaterialTheme.typography.labelMedium.copy(
+                                                color = DeepMedicalTeal,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp
+                                            )
+                                        )
+                                        val durSec = (recordedAudioDurationMs / 1000).coerceAtLeast(1)
+                                        Text(
+                                            text = if (transcript.isNotBlank()) "\"$transcript\"" else "Recorded voice • 0:${durSec.toString().padStart(2, '0')}",
+                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                color = DeepSlateText.copy(alpha = 0.75f),
+                                                fontSize = 11.sp
+                                            ),
+                                            maxLines = 1
+                                        )
+                                    }
+
+                                    // Re-record Button
+                                    IconButton(
+                                        onClick = { viewModel.discardRecordedAudio() },
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(Color.White)
+                                            .border(1.dp, OutlineSlate, CircleShape)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Replay,
+                                            contentDescription = "Record Again",
+                                            tint = DeepSlateText,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    // Send Button
+                                    Surface(
+                                        shape = RoundedCornerShape(9999.dp),
+                                        color = DeepMedicalTeal,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(9999.dp))
+                                            .clickable { viewModel.submitCurrentResponse() }
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                                        ) {
+                                            Text(
+                                                text = "Send",
+                                                style = MaterialTheme.typography.labelMedium.copy(
+                                                    color = Color.White,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp
+                                                )
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                                contentDescription = "Send to Assistant",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                // Left: Agent Speaking Indicator (Orange glass wave)
+                                PulsatingVoicePill(
+                                    isActive = isSpeaking || isPlayingAudio,
+                                    isHuman = false,
+                                    label = if (isSpeaking || isPlayingAudio) "Agent Speaking" else "Hear Voice",
+                                    onClick = { viewModel.replayAudio() }
+                                )
+
+                                // Right: Human Speaking Indicator (Blue glass wave)
+                                PulsatingVoicePill(
+                                    isActive = isListening,
+                                    isHuman = true,
+                                    label = if (isListening) "Listening..." else "Tap to Speak",
+                                    rmsDb = rmsDb,
+                                    onClick = handleVoiceClick
+                                )
+                            }
                         }
                     }
                 }
@@ -646,6 +786,12 @@ fun VoiceAnamnesisScreen(
                     viewModel.updateLanguageSettings(chosenLang, audioEnabled)
                 }
             }
+        )
+    }
+
+    if (showAppInfoDialog) {
+        AppInfoDialog(
+            onDismiss = { showAppInfoDialog = false }
         )
     }
 }
