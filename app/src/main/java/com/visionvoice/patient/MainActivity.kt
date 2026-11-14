@@ -13,7 +13,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.visionvoice.patient.ui.screens.LanguageSelectionScreen
 import com.visionvoice.patient.ui.screens.PreClinicalSummaryScreen
 import com.visionvoice.patient.ui.screens.QrHandoffScreen
 import com.visionvoice.patient.ui.screens.VoiceAnamnesisScreen
@@ -52,23 +51,12 @@ fun VisionVoiceAppNavigation(
 
     NavHost(
         navController = navController,
-        startDestination = VisionVoiceRoutes.LANGUAGE_SELECTION
+        startDestination = VisionVoiceRoutes.VOICE_ANAMNESIS
     ) {
-        composable(VisionVoiceRoutes.LANGUAGE_SELECTION) {
-            LanguageSelectionScreen(
-                viewModel = viewModel,
-                onNavigateToAnamnesis = {
-                    navController.navigate(VisionVoiceRoutes.VOICE_ANAMNESIS)
-                }
-            )
-        }
-
         composable(VisionVoiceRoutes.VOICE_ANAMNESIS) {
             VoiceAnamnesisScreen(
                 viewModel = viewModel,
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
+                showBackButton = false,
                 onNavigateToSummary = {
                     navController.navigate(VisionVoiceRoutes.PRE_CLINICAL_SUMMARY)
                 }
@@ -94,8 +82,9 @@ fun VisionVoiceAppNavigation(
                     navController.popBackStack()
                 },
                 onReturnHome = {
-                    navController.navigate(VisionVoiceRoutes.LANGUAGE_SELECTION) {
-                        popUpTo(VisionVoiceRoutes.LANGUAGE_SELECTION) {
+                    viewModel.resetScreening()
+                    navController.navigate(VisionVoiceRoutes.VOICE_ANAMNESIS) {
+                        popUpTo(VisionVoiceRoutes.VOICE_ANAMNESIS) {
                             inclusive = true
                         }
                     }

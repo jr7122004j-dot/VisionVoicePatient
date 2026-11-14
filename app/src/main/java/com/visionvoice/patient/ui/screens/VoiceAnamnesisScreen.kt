@@ -28,6 +28,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -61,6 +63,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.visionvoice.patient.data.model.ChatMessage
 import com.visionvoice.patient.data.model.MessageSender
+import com.visionvoice.patient.ui.components.LanguageOnboardingDialog
 import com.visionvoice.patient.ui.components.LargePillButton
 import com.visionvoice.patient.ui.components.PulsatingVoicePill
 import com.visionvoice.patient.ui.theme.AgentOrangeGlass
@@ -89,8 +92,9 @@ import com.visionvoice.patient.ui.viewmodel.ScreeningViewModel
 @Composable
 fun VoiceAnamnesisScreen(
     viewModel: ScreeningViewModel,
-    onNavigateBack: () -> Unit,
+    onNavigateBack: () -> Unit = {},
     onNavigateToSummary: () -> Unit,
+    showBackButton: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -106,6 +110,8 @@ fun VoiceAnamnesisScreen(
     val aiConnectionStatus by viewModel.aiConnectionStatus.collectAsState()
     val aiConnectionError by viewModel.aiConnectionError.collectAsState()
     val profile by viewModel.profile.collectAsState()
+    val showOnboardingDialog by viewModel.showOnboardingDialog.collectAsState()
+    val isOnboardingCompleted = viewModel.isOnboardingCompleted
 
     val totalTurns = viewModel.turnTitles.size
     val currentTitle = viewModel.getCurrentTurnTitle()
@@ -162,23 +168,41 @@ fun VoiceAnamnesisScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 10.dp)
             ) {
-                IconButton(
-                    onClick = {
-                        viewModel.stopAudio()
-                        onNavigateBack()
-                    },
-                    modifier = Modifier
-                        .size(46.dp)
-                        .clip(CircleShape)
-                        .background(SurfaceContainerLowest)
-                        .border(1.5.dp, OutlineSlate, CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back to language selection",
-                        tint = DeepMedicalTeal,
-                        modifier = Modifier.size(24.dp)
-                    )
+                if (showBackButton) {
+                    IconButton(
+                        onClick = {
+                            viewModel.stopAudio()
+                            onNavigateBack()
+                        },
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(SurfaceContainerLowest)
+                            .border(1.5.dp, OutlineSlate, CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = DeepMedicalTeal,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                } else {
+                    Surface(
+                        shape = CircleShape,
+                        color = SurfaceTeal,
+                        border = BorderStroke(1.5.dp, DeepMedicalTeal.copy(alpha = 0.35f)),
+                        modifier = Modifier.size(42.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Visibility,
+                                contentDescription = "VisionVoice",
+                                tint = DeepMedicalTeal,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.width(12.dp))
@@ -198,6 +222,49 @@ fun VoiceAnamnesisScreen(
                             fontWeight = FontWeight.SemiBold
                         )
                     )
+                }
+
+                // Language Selector Quick Pill in Top Bar
+                val currentLangObj = remember(profile.selectedLanguage) {
+                    SupportedLanguages.find { it.displayName.equals(profile.selectedLanguage, ignoreCase = true) }
+                        ?: SupportedLanguages.first()
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(9999.dp),
+                    color = SurfaceTeal,
+                    border = BorderStroke(1.5.dp, DeepMedicalTeal.copy(alpha = 0.35f)),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(9999.dp))
+                        .clickable {
+                            viewModel.openLanguageSettingsDialog()
+                        }
+                        .semantics {
+                            contentDescription = "Language settings: ${currentLangObj.displayName}"
+                        }
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Language,
+                            contentDescription = null,
+                            tint = DeepMedicalTeal,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "${currentLangObj.nativeScript} ▾",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = DeepMedicalTeal,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        )
+                    }
                 }
             }
         },
@@ -562,5 +629,23 @@ fun VoiceAnamnesisScreen(
                     .padding(bottom = 8.dp)
             )
         }
+    }
+
+    if (showOnboardingDialog) {
+        LanguageOnboardingDialog(
+            initialLanguage = profile.selectedLanguage,
+            initialAudioGuidance = profile.audioGuidanceEnabled,
+            canDismiss = isOnboardingCompleted,
+            onDismiss = {
+                viewModel.dismissLanguageSettingsDialog()
+            },
+            onConfirm = { chosenLang, audioEnabled ->
+                if (!isOnboardingCompleted) {
+                    viewModel.completeOnboarding(chosenLang, audioEnabled)
+                } else {
+                    viewModel.updateLanguageSettings(chosenLang, audioEnabled)
+                }
+            }
+        )
     }
 }
