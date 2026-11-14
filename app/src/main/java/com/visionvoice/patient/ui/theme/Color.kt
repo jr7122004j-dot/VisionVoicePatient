@@ -42,6 +42,12 @@ val SurfaceContainer = Color(0xFFEAEDFF)
 val SurfaceContainerHigh = Color(0xFFE2E7FF)
 val SurfaceContainerHighest = Color(0xFFDAE2FD)
 
+// Voice Pulse Accents
+val AgentPulseOrange = Color(0xFFFF6D00)
+val AgentOrangeGlass = Color(0x33FF6D00)
+val HumanPulseBlue = Color(0xFF0284C7)
+val HumanBlueGlass = Color(0x330284C7)
+
 // Clinical Alerts
 val ClinicalError = Color(0xFFBA1A1A)
 val ErrorContainer = Color(0xFFFFDAD6)

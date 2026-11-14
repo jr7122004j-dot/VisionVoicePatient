@@ -51,14 +51,123 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.visionvoice.patient.ui.theme.AgentOrangeGlass
+import com.visionvoice.patient.ui.theme.AgentPulseOrange
 import com.visionvoice.patient.ui.theme.AmberContainer
 import com.visionvoice.patient.ui.theme.DarkAmber
 import com.visionvoice.patient.ui.theme.DeepMedicalTeal
 import com.visionvoice.patient.ui.theme.DeepSlateText
+import com.visionvoice.patient.ui.theme.HumanBlueGlass
+import com.visionvoice.patient.ui.theme.HumanPulseBlue
 import com.visionvoice.patient.ui.theme.OutlineSlate
 import com.visionvoice.patient.ui.theme.SurfaceContainerLowest
 import com.visionvoice.patient.ui.theme.SurfaceTeal
 import com.visionvoice.patient.ui.theme.WarmAmber
+
+/**
+ * Pulsating Voice Indicator with glassmorphic glow.
+ * Circular mic with pulsating wave:
+ * Orange wave for AI Assistant (bottom-left), Blue wave for Human (bottom-right).
+ */
+@Composable
+fun PulsatingVoicePill(
+    isActive: Boolean,
+    isHuman: Boolean,
+    label: String,
+    rmsDb: Float = 0f,
+    onClick: () -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "pulseWave")
+    val waveScale1 by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = if (isActive) 1.35f else 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "waveScale1"
+    )
+    val waveScale2 by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = if (isActive) 1.55f else 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1100, delayMillis = 150, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "waveScale2"
+    )
+
+    val audioBoost = if (isActive && isHuman) (rmsDb.coerceIn(0f, 10f) / 10f) * 0.22f else 0f
+    val dynamicWaveScale = waveScale1 + audioBoost
+
+    val primaryColor = if (isHuman) HumanPulseBlue else AgentPulseOrange
+    val glassColor = if (isHuman) HumanBlueGlass else AgentOrangeGlass
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .clip(RoundedCornerShape(9999.dp))
+            .background(if (isActive) glassColor else SurfaceTeal.copy(alpha = 0.5f))
+            .border(
+                width = if (isActive) 2.dp else 1.dp,
+                color = if (isActive) primaryColor else OutlineSlate.copy(alpha = 0.6f),
+                shape = RoundedCornerShape(9999.dp)
+            )
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.size(36.dp)
+        ) {
+            if (isActive) {
+                // Secondary outer pulsating wave
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .scale(waveScale2)
+                        .clip(CircleShape)
+                        .background(primaryColor.copy(alpha = 0.15f))
+                )
+                // Primary pulsating wave ring
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .scale(dynamicWaveScale)
+                        .clip(CircleShape)
+                        .background(primaryColor.copy(alpha = 0.32f))
+                )
+            }
+            // Circular Mic button
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(if (isActive) primaryColor else OutlineSlate)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Mic,
+                    contentDescription = if (isHuman) "Patient Microphone" else "Assistant Voice",
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(6.dp))
+
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall.copy(
+                color = if (isActive) primaryColor else DeepSlateText.copy(alpha = 0.75f),
+                fontWeight = if (isActive) FontWeight.Bold else FontWeight.SemiBold,
+                fontSize = 12.sp
+            )
+        )
+    }
+}
 
 /**
  * Stitch Design System - Voice Orb Visualizer
