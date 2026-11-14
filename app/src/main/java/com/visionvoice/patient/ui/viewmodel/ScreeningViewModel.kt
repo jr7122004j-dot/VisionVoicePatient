@@ -4,7 +4,6 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.visionvoice.patient.ai.GeminiAnamnesisService
-import com.visionvoice.patient.ai.TurnQuestion
 import com.visionvoice.patient.data.model.ChatMessage
 import com.visionvoice.patient.data.model.MessageSender
 import com.visionvoice.patient.data.model.VisionProfile
@@ -29,7 +28,7 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
 
     val syncStatus: StateFlow<SyncStatus> = repository.syncStatus
 
-    val tenTurnQuestions: List<TurnQuestion> = geminiService.fallbackTenTurnQuestions
+    val turnTitles: List<String> = geminiService.turnTitles
 
     private val _currentTurnIndex = MutableStateFlow(0)
     val currentTurnIndex: StateFlow<Int> = _currentTurnIndex.asStateFlow()
@@ -58,9 +57,6 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
     private val _isPlayingAudio = MutableStateFlow(false)
     val isPlayingAudio: StateFlow<Boolean> = _isPlayingAudio.asStateFlow()
 
-    private val _audioProgress = MutableStateFlow(0f)
-    val audioProgress: StateFlow<Float> = _audioProgress.asStateFlow()
-
     init {
         initializeSession("Hindi")
     }
@@ -73,7 +69,16 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
                 chatHistory = emptyList()
             )
         }
-        loadInitialGreeting(language)
+    }
+
+    fun startAnamnesis() {
+        val existingAssistantMsg = _profile.value.chatHistory
+            .lastOrNull { it.sender == MessageSender.AI_ASSISTANT }?.text
+        if (existingAssistantMsg != null) {
+            triggerAudioGuidance(existingAssistantMsg)
+        } else {
+            loadInitialGreeting(_profile.value.selectedLanguage)
+        }
     }
 
     fun loadInitialGreeting(language: String = _profile.value.selectedLanguage) {
@@ -96,9 +101,6 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
                         break
                     }
                 } catch (e: Exception) {
-                    if (geminiService.offlineFallbackEnabled) {
-                        break
-                    }
                     val elapsed = System.currentTimeMillis() - startTime
                     val remainingSeconds = ((maxRetryDurationMs - elapsed) / 1000).coerceAtLeast(1)
                     _isConnectingToAi.value = true
@@ -123,7 +125,7 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
                     )
                 }
                 triggerAudioGuidance(greeting)
-            } else if (!geminiService.offlineFallbackEnabled) {
+            } else {
                 _aiConnectionError.value = "Internet connectivity is needed for VisionVoice AI. Please check your network connection and retry."
             }
         }
@@ -198,10 +200,6 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
                     aiReply = geminiService.sendPatientMessage(turn, text)
                 } catch (e: Exception) {
                     android.util.Log.w("ScreeningViewModel", "Attempt $attempt failed: ${e.message}")
-                    if (geminiService.offlineFallbackEnabled) {
-                        break
-                    }
-
                     _isConnectingToAi.value = true
                     val elapsedSec = ((System.currentTimeMillis() - startTime) / 1000).toInt()
                     val remainingSec = (30 - elapsedSec).coerceAtLeast(0)
@@ -233,30 +231,10 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
                 // Spoken output for low-vision patients
                 triggerAudioGuidance(aiReply)
 
-                if (turn < tenTurnQuestions.lastIndex) {
+                if (turn < turnTitles.lastIndex) {
                     _currentTurnIndex.value = turn + 1
                 } else {
                     finalizeTriage()
-                }
-            } else if (geminiService.offlineFallbackEnabled) {
-                // Offline fallback mode enabled via local.properties flag
-                val q = tenTurnQuestions[turn.coerceAtMost(tenTurnQuestions.lastIndex)]
-                val fallbackPrompt = if (_profile.value.selectedLanguage.equals("English", ignoreCase = true)) {
-                    q.promptEnglish
-                } else {
-                    q.promptHindi
-                }
-                _profile.update { current ->
-                    current.copy(
-                        chatHistory = current.chatHistory + ChatMessage(
-                            sender = MessageSender.AI_ASSISTANT,
-                            text = fallbackPrompt
-                        )
-                    )
-                }
-                triggerAudioGuidance(fallbackPrompt)
-                if (turn < tenTurnQuestions.lastIndex) {
-                    _currentTurnIndex.value = turn + 1
                 }
             } else {
                 // 30 seconds expired without live Gemini connection
@@ -269,13 +247,18 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
     fun retryConnection() {
         _aiConnectionError.value = null
         if (_profile.value.chatHistory.none { it.sender == MessageSender.AI_ASSISTANT }) {
-            loadInitialGreeting()
+            startAnamnesis()
         } else {
             val pendingText = _lastPendingPatientResponse.value
             if (!pendingText.isNullOrBlank()) {
                 submitVoiceResponse(pendingText)
             }
         }
+    }
+
+    fun stopAudio() {
+        voiceManager.stopSpeaking()
+        _isPlayingAudio.value = false
     }
 
     fun dismissAiConnectionError() {
@@ -305,40 +288,35 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun toggleAudioPlayback() {
+    fun toggleAudioPlayback(text: String? = null) {
         if (voiceManager.isSpeaking.value) {
             voiceManager.stopSpeaking()
             _isPlayingAudio.value = false
         } else {
-            val lastAssistantMsg = _profile.value.chatHistory
+            val toSpeak = text ?: _profile.value.chatHistory
                 .lastOrNull { it.sender == MessageSender.AI_ASSISTANT }?.text
-            if (!lastAssistantMsg.isNullOrBlank()) {
-                speakPrompt(lastAssistantMsg)
+            if (!toSpeak.isNullOrBlank()) {
+                speakPrompt(toSpeak)
             }
         }
     }
 
-    fun seekAudio(progress: Float) {
-        _audioProgress.value = progress.coerceIn(0f, 1f)
-    }
-
-    fun replayAudio() {
-        val lastAssistantMsg = _profile.value.chatHistory
+    fun replayAudio(text: String? = null) {
+        val toSpeak = text ?: _profile.value.chatHistory
             .lastOrNull { it.sender == MessageSender.AI_ASSISTANT }?.text
-        if (!lastAssistantMsg.isNullOrBlank()) {
-            speakPrompt(lastAssistantMsg)
+        if (!toSpeak.isNullOrBlank()) {
+            speakPrompt(toSpeak)
         }
     }
 
     fun getCurrentTurnTitle(): String {
-        return tenTurnQuestions[_currentTurnIndex.value].title
+        return turnTitles.getOrElse(_currentTurnIndex.value) { "Clinical Screening" }
     }
 
     private fun speakPrompt(prompt: String) {
         _isPlayingAudio.value = true
         voiceManager.speak(prompt) {
             _isPlayingAudio.value = false
-            _audioProgress.value = 1f
         }
     }
 

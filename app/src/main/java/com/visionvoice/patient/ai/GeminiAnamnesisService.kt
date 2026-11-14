@@ -27,8 +27,7 @@ import kotlinx.serialization.json.jsonPrimitive
  * and resilient offline rule-based fallback when no API key or network is present.
  */
 class GeminiAnamnesisService(
-    private val apiKey: String = BuildConfig.GEMINI_API_KEY,
-    val offlineFallbackEnabled: Boolean = BuildConfig.OFFLINE_FALLBACK_ENABLED
+    private val apiKey: String = BuildConfig.GEMINI_API_KEY
 ) {
     private val isLiveApiConfigured: Boolean = apiKey.isNotBlank() && apiKey != "\"\""
 
@@ -41,78 +40,18 @@ class GeminiAnamnesisService(
         isLenient = true
     }
 
-    // 10-turn clinical prompt guidance (for offline fallback & quick reply suggestions)
-    val fallbackTenTurnQuestions = listOf(
-        TurnQuestion(
-            turn = 1,
-            title = "Occupation & Primary Needs",
-            promptHindi = "नमस्ते! मैं आपकी विज़न-वॉयस सहायिका हूँ। आप रोज़ाना क्या काम करते हैं और आपको देखने में मुख्य परेशानी क्या हो रही है?",
-            promptEnglish = "Hello! I am your VisionVoice assistant. What daily work or occupation do you do, and what is your main visual difficulty?",
-            hints = listOf("खेत में काम / Farming", "सिलाई व बुनाई / Tailoring", "दुकान / Office Desk", "ड्राइविंग / Driving")
-        ),
-        TurnQuestion(
-            turn = 2,
-            title = "Working Distance Details",
-            promptHindi = "काम करते समय आपको सुई-धागा जैसा बारीक पास का काम ज़्यादा करना पड़ता है या दूर का देखना होता है?",
-            promptEnglish = "While working, do you need to focus on fine near work like threading needles, or distant viewing?",
-            hints = listOf("बारीक पास का काम / Fine near work", "1-2 मीटर की दूरी / Arm's length", "दूर का काम / Distant viewing")
-        ),
-        TurnQuestion(
-            turn = 3,
-            title = "Environmental Hazards",
-            promptHindi = "क्या आपकी आँखों में चूल्हे का धुआँ, तेज़ धूप, धूल-मिट्टी या कोई रासायनिक पदार्थ जाता है?",
-            promptEnglish = "Are your eyes exposed to cooking fire smoke, bright sunlight/UV, dust, or chemicals daily?",
-            hints = listOf("चूल्हे का धुआँ / Biomass smoke", "तेज़ धूप व धूल / Bright sun & dust", "सामान्य वातावरण / Normal environment")
-        ),
-        TurnQuestion(
-            turn = 4,
-            title = "Digital Strain & Lighting",
-            promptHindi = "आप मोबाइल या टीवी कितने घंटे देखते हैं, और आपके कमरे या काम करने की जगह में रोशनी कैसी रहती है?",
-            promptEnglish = "How many hours do you use mobile screens or TV, and what is the lighting like where you work?",
-            hints = listOf("2 घंटे से कम / < 2 hours", "4-6 घंटे स्क्रीन / 4-6 hours screen", "कम रोशनी में काम / Dim lighting")
-        ),
-        TurnQuestion(
-            turn = 5,
-            title = "Refractive Symptoms (Distance vs Near)",
-            promptHindi = "क्या आपको अखबार पढ़ने के लिए हाथ आगे फैलाना पड़ता है, या दूर का बोर्ड व चेहरे धुंधले दिखते हैं?",
-            promptEnglish = "Do you have to stretch your arm to read newspapers, or do distant signs and faces appear blurry?",
-            hints = listOf("पास का धुंधला / Near blur", "दूर का धुंधला / Distance blur", "दोनों धुंधले / Both near & distant blur")
-        ),
-        TurnQuestion(
-            turn = 6,
-            title = "Eye Strain & Headaches",
-            promptHindi = "क्या शाम होते-होते आपके माथे में दर्द होता है या आँखें सिकोड़कर देखना पड़ता है?",
-            promptEnglish = "Do you experience forehead headaches towards the evening, or do you have to squint to see clearly?",
-            hints = listOf("शाम को सिरदर्द / Evening headaches", "आँखों में खिंचाव / Eye strain", "कोई दर्द नहीं / No headaches")
-        ),
-        TurnQuestion(
-            turn = 7,
-            title = "Systemic Health (Diabetes & BP)",
-            promptHindi = "क्या आपको शुगर (डायबिटीज़) या ब्लड प्रेशर की शिकायत है, और आप कोई नियमित दवा लेते हैं?",
-            promptEnglish = "Do you have Diabetes or high Blood Pressure, and do you take regular medications for them?",
-            hints = listOf("डायबिटीज़ है / Yes, Diabetes", "हाई ब्लड प्रेशर / High BP", "दोनों हैं / Both Diabetes & BP", "कोई बीमारी नहीं / None")
-        ),
-        TurnQuestion(
-            turn = 8,
-            title = "Pathology Red Flags",
-            promptHindi = "क्या आपको आँखों के आगे जाला, बादल जैसा धुंधलापन, बिजली जैसी चमक या आँखों में तेज़ दर्द महसूस होता है?",
-            promptEnglish = "Do you see cloudy haze like a cataract, flashing lights, black floaters, or severe eye pain?",
-            hints = listOf("मोतियाबिंद जैसा धुंधला / Cloudy lens haze", "रात में रोशनी के छल्ले / Halos around lights", "सामान्य धुंधलापन / Mild blur only")
-        ),
-        TurnQuestion(
-            turn = 9,
-            title = "Additional Information (Open Inquiry)",
-            promptHindi = "क्या आँखों, पुरानी चोट या सेहत से जुड़ी कोई ऐसी बात है जो हमने नहीं पूछी पर आप डॉक्टर को बताना चाहते हैं?",
-            promptEnglish = "Is there any other eye symptom, past injury, or health concern not covered yet that you want the doctor to know?",
-            hints = listOf("आँखों में रेत जैसा चुभना / Gritty sensation", "पुरानी चोट लगी थी / Old eye injury", "कुछ और नहीं / Nothing else")
-        ),
-        TurnQuestion(
-            turn = 10,
-            title = "Summary & Completion",
-            promptHindi = "धन्यवाद। आपकी सभी जानकारियाँ सुरक्षित रूप से दर्ज कर ली गई हैं। आपकी क्लिनिकल रिपोर्ट तैयार है।",
-            promptEnglish = "Thank you. All your details have been recorded. Your pre-clinical screening report is ready for the doctor.",
-            hints = listOf("रिपोर्ट देखें / View Summary")
-        )
+    // 10-turn clinical progression titles
+    val turnTitles = listOf(
+        "Occupation & Primary Needs",
+        "Working Distance Details",
+        "Environmental Hazards",
+        "Digital Strain & Lighting",
+        "Refractive Symptoms",
+        "Eye Strain & Headaches",
+        "Systemic Health (Diabetes & BP)",
+        "Pathology Red Flags",
+        "Additional Information",
+        "Summary & Completion"
     )
 
     fun initializeSession(language: String) {
@@ -171,50 +110,35 @@ class GeminiAnamnesisService(
             initializeSession(language)
         }
 
-        if (isLiveApiConfigured && activeChat != null) {
-            try {
-                android.util.Log.d("GeminiAnamnesis", "Generating initial greeting from Gemini in $language")
-                val greetingPrompt = """
-                    Start the clinical screening anamnesis session.
-                    The patient has chosen $language.
-                    Greet the patient warmly as their female VisionVoice clinical screening assistant (क्लिनिकल सहायिका).
-                    Introduce yourself, and ask the first turn question:
-                    Ask what daily work or occupation they do, and what primary vision or eye difficulty they are experiencing.
-                    Remember: Brevity is critical (1 to 2 spoken sentences, max 25-30 words).
-                    Respond strictly in $language.
-                """.trimIndent()
-
-                val reply = kotlinx.coroutines.withTimeoutOrNull(7000L) {
-                    val response = activeChat?.sendMessage(
-                        content {
-                            text(greetingPrompt)
-                        }
-                    )
-                    response?.text?.trim()
-                }
-
-                if (!reply.isNullOrBlank()) {
-                    android.util.Log.i("GeminiAnamnesis", "⚡ Received LIVE initial greeting from Gemini: $reply")
-                    return@withContext reply
-                } else if (!offlineFallbackEnabled) {
-                    throw java.io.IOException("Gemini response timed out or returned empty for initial greeting")
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("GeminiAnamnesis", "Error generating initial greeting from Gemini", e)
-                if (!offlineFallbackEnabled) {
-                    throw e
-                }
-            }
-        } else if (!offlineFallbackEnabled) {
-            throw IllegalStateException("Gemini API is not configured and offline fallback is disabled")
+        if (!isLiveApiConfigured || activeChat == null) {
+            throw IllegalStateException("Gemini live API is not configured or active chat is null")
         }
 
-        // Offline fallback (only when offlineFallbackEnabled is true)
-        val q = fallbackTenTurnQuestions[0]
-        return@withContext if (language.equals("English", ignoreCase = true)) {
-            q.promptEnglish
+        android.util.Log.d("GeminiAnamnesis", "Generating initial greeting from Gemini in $language")
+        val greetingPrompt = """
+            Start the clinical screening anamnesis session.
+            The patient has chosen $language.
+            Greet the patient warmly as their female VisionVoice clinical screening assistant (क्लिनिकल सहायिका).
+            Introduce yourself, and ask the first turn question:
+            Ask what daily work or occupation they do, and what primary vision or eye difficulty they are experiencing.
+            Remember: Brevity is critical (1 to 2 spoken sentences, max 25-30 words).
+            Respond strictly in $language.
+        """.trimIndent()
+
+        val reply = kotlinx.coroutines.withTimeoutOrNull(7000L) {
+            val response = activeChat?.sendMessage(
+                content {
+                    text(greetingPrompt)
+                }
+            )
+            response?.text?.trim()
+        }
+
+        if (!reply.isNullOrBlank()) {
+            android.util.Log.i("GeminiAnamnesis", "⚡ Received LIVE initial greeting from Gemini: $reply")
+            return@withContext reply
         } else {
-            q.promptHindi
+            throw java.io.IOException("Gemini response timed out or returned empty for initial greeting")
         }
     }
 
@@ -222,51 +146,31 @@ class GeminiAnamnesisService(
         turnIndex: Int,
         patientText: String
     ): String = withContext(Dispatchers.IO) {
-        if (isLiveApiConfigured) {
-            if (activeChat == null) {
-                initializeSession(currentLanguage)
-            }
-
-            if (activeChat != null) {
-                try {
-                    android.util.Log.d("GeminiAnamnesis", "Sending message to Gemini (turn ${turnIndex + 1}): $patientText")
-                    val reply = kotlinx.coroutines.withTimeoutOrNull(7000L) {
-                        val response = activeChat?.sendMessage(
-                            content {
-                                text("Patient response at turn ${turnIndex + 1}: $patientText")
-                            }
-                        )
-                        response?.text?.trim()
-                    }
-                    if (!reply.isNullOrBlank()) {
-                        android.util.Log.i("GeminiAnamnesis", "⚡ Received LIVE reply from Gemini: $reply")
-                        return@withContext reply
-                    } else {
-                        android.util.Log.w("GeminiAnamnesis", "Gemini returned null or timed out")
-                        if (!offlineFallbackEnabled) {
-                            throw java.io.IOException("Gemini response timed out or returned empty")
-                        }
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.e("GeminiAnamnesis", "Gemini API error", e)
-                    if (!offlineFallbackEnabled) {
-                        throw e
-                    }
-                }
-            } else if (!offlineFallbackEnabled) {
-                throw java.io.IOException("Active Gemini chat session is unavailable")
-            }
-        } else if (!offlineFallbackEnabled) {
-            throw IllegalStateException("Gemini API is not configured and offline fallback is disabled")
+        if (!isLiveApiConfigured) {
+            throw IllegalStateException("Gemini API is not configured")
         }
 
-        // Offline / Fallback question progression (only when offlineFallbackEnabled is true)
-        val nextTurnIdx = (turnIndex + 1).coerceAtMost(fallbackTenTurnQuestions.lastIndex)
-        val q = fallbackTenTurnQuestions[nextTurnIdx]
-        return@withContext if (currentLanguage.equals("English", ignoreCase = true)) {
-            q.promptEnglish
+        if (activeChat == null) {
+            initializeSession(currentLanguage)
+        }
+
+        val chat = activeChat ?: throw java.io.IOException("Active Gemini chat session is unavailable")
+
+        android.util.Log.d("GeminiAnamnesis", "Sending message to Gemini (turn ${turnIndex + 1}): $patientText")
+        val reply = kotlinx.coroutines.withTimeoutOrNull(7000L) {
+            val response = chat.sendMessage(
+                content {
+                    text("Patient response at turn ${turnIndex + 1}: $patientText")
+                }
+            )
+            response.text?.trim()
+        }
+
+        if (!reply.isNullOrBlank()) {
+            android.util.Log.i("GeminiAnamnesis", "⚡ Received LIVE reply from Gemini: $reply")
+            reply
         } else {
-            q.promptHindi
+            throw java.io.IOException("Gemini response timed out or returned empty")
         }
     }
 
@@ -427,11 +331,3 @@ class GeminiAnamnesisService(
         )
     }
 }
-
-data class TurnQuestion(
-    val turn: Int,
-    val title: String,
-    val promptHindi: String,
-    val promptEnglish: String,
-    val hints: List<String>
-)

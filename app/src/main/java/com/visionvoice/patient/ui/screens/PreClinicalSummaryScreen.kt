@@ -79,8 +79,14 @@ fun PreClinicalSummaryScreen(
 ) {
     val profile by viewModel.profile.collectAsState()
     val isPlayingAudio by viewModel.isPlayingAudio.collectAsState()
-    val audioProgress by viewModel.audioProgress.collectAsState()
     val scrollState = rememberScrollState()
+
+    val summaryNarrationText = buildString {
+        append("Clinical Summary. ")
+        append("Urgency: ${profile.urgencyLevel.title}. ")
+        append("Functional Vision: ${profile.functionalDominance.label}. ")
+        append(profile.aiTriageAssessment)
+    }
 
     val formattedDate = SimpleDateFormat("MMM d, yyyy • h:mm a", Locale.getDefault())
         .format(Date(profile.timestamp))
@@ -95,7 +101,10 @@ fun PreClinicalSummaryScreen(
                     .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
                 IconButton(
-                    onClick = onNavigateBack,
+                    onClick = {
+                        viewModel.stopAudio()
+                        onNavigateBack()
+                    },
                     modifier = Modifier
                         .size(52.dp)
                         .clip(CircleShape)
@@ -273,10 +282,8 @@ fun PreClinicalSummaryScreen(
             AudioPlaybackCard(
                 title = "Summary Audio Narration",
                 isPlaying = isPlayingAudio,
-                progress = audioProgress,
-                onTogglePlay = { viewModel.toggleAudioPlayback() },
-                onReplay = { viewModel.replayAudio() },
-                onSeek = { viewModel.seekAudio(it) }
+                onTogglePlay = { viewModel.toggleAudioPlayback(summaryNarrationText) },
+                onReplay = { viewModel.replayAudio(summaryNarrationText) }
             )
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -349,6 +356,7 @@ fun PreClinicalSummaryScreen(
             LargePillButton(
                 text = "Generate Secure QR Handoff",
                 onClick = {
+                    viewModel.stopAudio()
                     viewModel.persistCurrentProfile()
                     onNavigateToQr()
                 },
@@ -359,7 +367,10 @@ fun PreClinicalSummaryScreen(
 
             // Retake screening button
             OutlinedButton(
-                onClick = onNavigateBack,
+                onClick = {
+                    viewModel.stopAudio()
+                    onNavigateBack()
+                },
                 shape = RoundedCornerShape(9999.dp),
                 border = BorderStroke(2.dp, DeepMedicalTeal),
                 modifier = Modifier
