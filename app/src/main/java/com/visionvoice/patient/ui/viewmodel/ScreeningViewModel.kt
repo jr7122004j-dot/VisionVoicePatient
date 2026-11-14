@@ -1,6 +1,8 @@
 package com.visionvoice.patient.ui.viewmodel
 
 import android.app.Application
+import android.content.Context
+import android.content.SharedPreferences
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.visionvoice.patient.ai.GeminiAnamnesisService
@@ -18,6 +20,21 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class ScreeningViewModel(application: Application) : AndroidViewModel(application) {
+
+    companion object {
+        private const val PREFS_NAME = "visionvoice_patient_prefs"
+        private const val KEY_ONBOARDING_COMPLETED = "pref_onboarding_completed"
+        private const val KEY_SELECTED_LANGUAGE = "pref_selected_language"
+        private const val KEY_AUDIO_GUIDANCE = "pref_audio_guidance"
+    }
+
+    private val prefs: SharedPreferences = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    val isOnboardingCompleted: Boolean
+        get() = prefs.getBoolean(KEY_ONBOARDING_COMPLETED, false)
+
+    private val _showOnboardingDialog = MutableStateFlow(!isOnboardingCompleted)
+    val showOnboardingDialog: StateFlow<Boolean> = _showOnboardingDialog.asStateFlow()
 
     val voiceManager = VoiceManager(application)
     val geminiService = GeminiAnamnesisService()
@@ -58,7 +75,16 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
     val isPlayingAudio: StateFlow<Boolean> = _isPlayingAudio.asStateFlow()
 
     init {
-        initializeSession("Hindi")
+        val savedLanguage = prefs.getString(KEY_SELECTED_LANGUAGE, "Hindi") ?: "Hindi"
+        val savedAudioGuidance = prefs.getBoolean(KEY_AUDIO_GUIDANCE, true)
+        _profile.update { current ->
+            current.copy(
+                selectedLanguage = savedLanguage,
+                audioGuidanceEnabled = savedAudioGuidance
+            )
+        }
+        voiceManager.setLanguage(savedLanguage)
+        initializeSession(savedLanguage)
     }
 
     private fun initializeSession(language: String) {
@@ -71,7 +97,67 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun completeOnboarding(language: String, audioGuidance: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_ONBOARDING_COMPLETED, true)
+            .putString(KEY_SELECTED_LANGUAGE, language)
+            .putBoolean(KEY_AUDIO_GUIDANCE, audioGuidance)
+            .apply()
+
+        setLanguage(language)
+        setAudioGuidance(audioGuidance)
+        _showOnboardingDialog.value = false
+
+        loadInitialGreeting(language)
+    }
+
+    fun openLanguageSettingsDialog() {
+        _showOnboardingDialog.value = true
+    }
+
+    fun dismissLanguageSettingsDialog() {
+        if (isOnboardingCompleted) {
+            _showOnboardingDialog.value = false
+        }
+    }
+
+    fun updateLanguageSettings(language: String, audioGuidance: Boolean) {
+        val languageChanged = _profile.value.selectedLanguage != language
+        prefs.edit()
+            .putString(KEY_SELECTED_LANGUAGE, language)
+            .putBoolean(KEY_AUDIO_GUIDANCE, audioGuidance)
+            .apply()
+
+        setLanguage(language)
+        setAudioGuidance(audioGuidance)
+        _showOnboardingDialog.value = false
+
+        if (languageChanged) {
+            resetScreening()
+        }
+    }
+
+    fun resetScreening() {
+        stopAudio()
+        _currentTurnIndex.value = 0
+        _aiConnectionError.value = null
+        _aiConnectionStatus.value = null
+        _isConnectingToAi.value = false
+        _isAiThinking.value = false
+        _lastPendingPatientResponse.value = null
+        val currentLang = _profile.value.selectedLanguage
+        val currentAudio = _profile.value.audioGuidanceEnabled
+        initializeSession(currentLang)
+        _profile.update { it.copy(audioGuidanceEnabled = currentAudio) }
+        loadInitialGreeting(currentLang)
+    }
+
     fun startAnamnesis() {
+        // If first-time onboarding dialog is currently being shown, defer anamnesis until user taps "Begin"
+        if (_showOnboardingDialog.value && !isOnboardingCompleted) {
+            return
+        }
+
         val existingAssistantMsg = _profile.value.chatHistory
             .lastOrNull { it.sender == MessageSender.AI_ASSISTANT }?.text
         if (existingAssistantMsg != null) {
