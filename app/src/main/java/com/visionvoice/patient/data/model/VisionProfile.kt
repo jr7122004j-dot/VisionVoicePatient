@@ -136,11 +136,3 @@ data class HandoffSummary(
     val triage: String,
     val ts: Long
 )
-
-data class AnamnesisQuestion(
-    val index: Int,
-    val totalCount: Int,
-    val title: String,
-    val spokenPrompt: String,
-    val hints: List<String>
-)

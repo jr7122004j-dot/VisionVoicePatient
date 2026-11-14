@@ -107,11 +107,8 @@ fun VoiceAnamnesisScreen(
     val aiConnectionError by viewModel.aiConnectionError.collectAsState()
     val profile by viewModel.profile.collectAsState()
 
-    val totalTurns = viewModel.tenTurnQuestions.size
+    val totalTurns = viewModel.turnTitles.size
     val currentTitle = viewModel.getCurrentTurnTitle()
-
-    val lastAssistantMessage = profile.chatHistory
-        .lastOrNull { it.sender == MessageSender.AI_ASSISTANT }?.text
 
     val listState = rememberLazyListState()
 
@@ -133,18 +130,9 @@ fun VoiceAnamnesisScreen(
         }
     }
 
-    // Automatically trigger audio guidance when a new assistant message arrives
-    LaunchedEffect(lastAssistantMessage) {
-        if (!lastAssistantMessage.isNullOrBlank()) {
-            viewModel.triggerAudioGuidance(lastAssistantMessage)
-        }
-    }
-
-    // Ensure initial greeting is generated if chat history is empty
+    // Start anamnesis session upon entering the screen
     LaunchedEffect(Unit) {
-        if (profile.chatHistory.isEmpty()) {
-            viewModel.loadInitialGreeting()
-        }
+        viewModel.startAnamnesis()
     }
 
     // Auto-scroll chat to latest message or thinking state
@@ -175,7 +163,10 @@ fun VoiceAnamnesisScreen(
                     .padding(horizontal = 16.dp, vertical = 10.dp)
             ) {
                 IconButton(
-                    onClick = onNavigateBack,
+                    onClick = {
+                        viewModel.stopAudio()
+                        onNavigateBack()
+                    },
                     modifier = Modifier
                         .size(46.dp)
                         .clip(CircleShape)
@@ -561,7 +552,10 @@ fun VoiceAnamnesisScreen(
             // Review Summary So Far / Complete
             LargePillButton(
                 text = if (currentTurn >= totalTurns - 1) "Complete & View Clinical Summary" else "Review Summary So Far",
-                onClick = onNavigateToSummary,
+                onClick = {
+                    viewModel.stopAudio()
+                    onNavigateToSummary()
+                },
                 containerColor = DeepMedicalTeal,
                 modifier = Modifier
                     .fillMaxWidth()
