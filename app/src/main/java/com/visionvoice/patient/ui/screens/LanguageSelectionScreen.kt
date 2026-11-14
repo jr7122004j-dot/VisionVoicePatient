@@ -20,13 +20,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -35,6 +40,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -232,88 +240,142 @@ fun LanguageSelectionScreen(
                     .padding(bottom = 12.dp)
             )
 
-            // High Contrast Language Cards (72dp minimum touch targets)
-            Column(
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                SupportedLanguages.forEach { lang ->
-                    val isSelected = profile.selectedLanguage.equals(lang.displayName, ignoreCase = true) ||
-                            profile.selectedLanguage.equals(lang.nativeScript, ignoreCase = true)
+            // High-Contrast Dropdown Selector
+            var dropdownExpanded by remember { mutableStateOf(false) }
+            val currentSelectedLang = SupportedLanguages.firstOrNull {
+                profile.selectedLanguage.equals(it.displayName, ignoreCase = true) ||
+                    profile.selectedLanguage.equals(it.nativeScript, ignoreCase = true)
+            } ?: SupportedLanguages[0]
 
-                    val cardBorder = if (isSelected) {
-                        BorderStroke(3.dp, DeepMedicalTeal)
-                    } else {
-                        BorderStroke(2.dp, OutlineSlate)
-                    }
-
-                    val cardBackground = if (isSelected) SurfaceTeal else SurfaceContainerLowest
-
-                    Card(
-                        shape = RoundedCornerShape(24.dp),
-                        colors = CardDefaults.cardColors(containerColor = cardBackground),
-                        border = cardBorder,
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Card(
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = SurfaceTeal),
+                    border = BorderStroke(2.5.dp, DeepMedicalTeal),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(84.dp)
+                        .clickable { dropdownExpanded = true }
+                        .semantics {
+                            role = Role.DropdownList
+                            contentDescription = "Selected language: ${currentSelectedLang.displayName} (${currentSelectedLang.nativeScript}). Tap to change language."
+                        }
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(76.dp)
-                            .clickable {
-                                viewModel.setLanguage(lang.displayName)
-                            }
-                            .semantics {
-                                selected = isSelected
-                                role = Role.RadioButton
-                                contentDescription = "${lang.displayName}, ${lang.nativeScript}"
-                            }
+                            .fillMaxSize()
+                            .padding(horizontal = 20.dp)
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 20.dp)
+                            modifier = Modifier.weight(1f)
                         ) {
-                            // 32dp outer diameter radio circle
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
-                                    .size(32.dp)
+                                    .size(48.dp)
                                     .clip(CircleShape)
-                                    .border(
-                                        width = if (isSelected) 4.dp else 2.dp,
-                                        color = if (isSelected) DeepMedicalTeal else OutlineSlate,
-                                        shape = CircleShape
-                                    )
-                                    .background(if (isSelected) DeepMedicalTeal else Color.Transparent)
+                                    .background(DeepMedicalTeal)
                             ) {
-                                if (isSelected) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
+                                Icon(
+                                    imageVector = Icons.Default.Language,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(26.dp)
+                                )
                             }
 
-                            Spacer(modifier = Modifier.width(18.dp))
+                            Spacer(modifier = Modifier.width(16.dp))
 
-                            Column(modifier = Modifier.weight(1f)) {
+                            Column {
                                 Text(
-                                    text = "${lang.displayName} (${lang.nativeScript})",
+                                    text = "${currentSelectedLang.displayName} (${currentSelectedLang.nativeScript})",
                                     style = MaterialTheme.typography.titleMedium.copy(
                                         color = DeepSlateText,
                                         fontSize = 20.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold
+                                        fontWeight = FontWeight.Bold
                                     )
                                 )
                                 Text(
-                                    text = lang.regionNote,
+                                    text = currentSelectedLang.regionNote,
                                     style = MaterialTheme.typography.bodyMedium.copy(
-                                        color = DeepSlateText.copy(alpha = 0.7f),
-                                        fontSize = 16.sp
+                                        color = DeepSlateText.copy(alpha = 0.75f),
+                                        fontSize = 15.sp
                                     )
                                 )
                             }
                         }
+
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = "Open language options",
+                            tint = DeepMedicalTeal,
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+                }
+
+                DropdownMenu(
+                    expanded = dropdownExpanded,
+                    onDismissRequest = { dropdownExpanded = false },
+                    modifier = Modifier
+                        .fillMaxWidth(0.9f)
+                        .background(SurfaceContainerLowest, RoundedCornerShape(20.dp))
+                        .border(2.dp, OutlineSlate, RoundedCornerShape(20.dp))
+                ) {
+                    SupportedLanguages.forEach { lang ->
+                        val isItemActive = lang.displayName.equals(currentSelectedLang.displayName, ignoreCase = true)
+                        DropdownMenuItem(
+                            text = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "${lang.displayName} (${lang.nativeScript})",
+                                            style = MaterialTheme.typography.titleMedium.copy(
+                                                color = if (isItemActive) DeepMedicalTeal else DeepSlateText,
+                                                fontWeight = if (isItemActive) FontWeight.Bold else FontWeight.Medium,
+                                                fontSize = 18.sp
+                                            )
+                                        )
+                                        Text(
+                                            text = lang.regionNote,
+                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                color = DeepSlateText.copy(alpha = 0.65f),
+                                                fontSize = 14.sp
+                                            )
+                                        )
+                                    }
+                                    if (isItemActive) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = "Selected",
+                                            tint = DeepMedicalTeal,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                }
+                            },
+                            onClick = {
+                                viewModel.setLanguage(lang.displayName)
+                                dropdownExpanded = false
+                            },
+                            colors = MenuDefaults.itemColors(
+                                textColor = DeepSlateText
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (isItemActive) SurfaceTeal else Color.Transparent)
+                        )
                     }
                 }
             }

@@ -14,6 +14,7 @@ val localProperties = Properties().apply {
     }
 }
 val geminiApiKey: String = localProperties.getProperty("gemini.api.key") ?: ""
+val offlineFallbackEnabled: Boolean = localProperties.getProperty("gemini.offline.fallback.enabled")?.toBoolean() ?: false
 
 android {
     namespace = "com.visionvoice.patient"
@@ -30,6 +31,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GEMINI_API_KEY", "\"$geminiApiKey\"")
+        buildConfigField("Boolean", "OFFLINE_FALLBACK_ENABLED", "$offlineFallbackEnabled")
     }
 
     buildTypes {

@@ -11,8 +11,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,14 +20,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,6 +39,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -52,21 +54,25 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.visionvoice.patient.data.model.ChatMessage
 import com.visionvoice.patient.data.model.MessageSender
-import com.visionvoice.patient.ui.components.AudioPlaybackCard
 import com.visionvoice.patient.ui.components.LargePillButton
-import com.visionvoice.patient.ui.components.MassiveVoiceActionButton
-import com.visionvoice.patient.ui.components.VoiceOrbVisualizer
+import com.visionvoice.patient.ui.components.PulsatingVoicePill
+import com.visionvoice.patient.ui.theme.AgentOrangeGlass
+import com.visionvoice.patient.ui.theme.AgentPulseOrange
 import com.visionvoice.patient.ui.theme.CanvasWarmWhite
 import com.visionvoice.patient.ui.theme.ClinicalError
 import com.visionvoice.patient.ui.theme.DarkAmber
 import com.visionvoice.patient.ui.theme.DeepMedicalTeal
 import com.visionvoice.patient.ui.theme.DeepSlateText
 import com.visionvoice.patient.ui.theme.ErrorContainer
+import com.visionvoice.patient.ui.theme.HumanBlueGlass
+import com.visionvoice.patient.ui.theme.HumanPulseBlue
 import com.visionvoice.patient.ui.theme.OnErrorContainer
 import com.visionvoice.patient.ui.theme.OutlineSlate
 import com.visionvoice.patient.ui.theme.SurfaceContainerLowest
@@ -75,11 +81,11 @@ import com.visionvoice.patient.ui.theme.WarmAmber
 import com.visionvoice.patient.ui.viewmodel.ScreeningViewModel
 
 /**
- * Screen 2: Voice-First AI Anamnesis (Stitch ID: 8730e38a3d6d4c3f9876fcb082fe3be2)
- * 10-turn adaptive conversational anamnesis powered by Gemini AI, Voice Orb Visualizer,
- * native SpeechRecognizer (STT) and TextToSpeech (TTS), and tactile quick response chips.
+ * Screen 2: Voice-First AI Anamnesis
+ * Clean unified chat conversation with AI Assistant on left, Human replies on right,
+ * Orange pulsating voice wave on bottom-left, Blue pulsating voice wave on bottom-right,
+ * and horizontally scrollable quick responses.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun VoiceAnamnesisScreen(
     viewModel: ScreeningViewModel,
@@ -95,20 +101,19 @@ fun VoiceAnamnesisScreen(
     val transcript by viewModel.voiceTranscript.collectAsState()
     val rmsDb by viewModel.voiceRmsDb.collectAsState()
     val isPlayingAudio by viewModel.isPlayingAudio.collectAsState()
-    val audioProgress by viewModel.audioProgress.collectAsState()
     val voiceError by viewModel.voiceError.collectAsState()
+    val isConnectingToAi by viewModel.isConnectingToAi.collectAsState()
+    val aiConnectionStatus by viewModel.aiConnectionStatus.collectAsState()
+    val aiConnectionError by viewModel.aiConnectionError.collectAsState()
     val profile by viewModel.profile.collectAsState()
 
     val totalTurns = viewModel.tenTurnQuestions.size
     val currentTitle = viewModel.getCurrentTurnTitle()
-    val currentHints = viewModel.getCurrentTurnHints()
 
-    // Retrieve the active question prompt (either latest from Gemini or the turn template)
-    val activePromptText = profile.chatHistory
+    val lastAssistantMessage = profile.chatHistory
         .lastOrNull { it.sender == MessageSender.AI_ASSISTANT }?.text
-        ?: viewModel.getCurrentTurnPrompt()
 
-    val scrollState = rememberScrollState()
+    val listState = rememberLazyListState()
 
     var hasAudioPermission by remember {
         mutableStateOf(
@@ -128,9 +133,28 @@ fun VoiceAnamnesisScreen(
         }
     }
 
-    // Automatically trigger audio prompt when screen opens or when turn changes
-    LaunchedEffect(currentTurn) {
-        viewModel.triggerAudioGuidance(activePromptText)
+    // Automatically trigger audio guidance when a new assistant message arrives
+    LaunchedEffect(lastAssistantMessage) {
+        if (!lastAssistantMessage.isNullOrBlank()) {
+            viewModel.triggerAudioGuidance(lastAssistantMessage)
+        }
+    }
+
+    // Ensure initial greeting is generated if chat history is empty
+    LaunchedEffect(Unit) {
+        if (profile.chatHistory.isEmpty()) {
+            viewModel.loadInitialGreeting()
+        }
+    }
+
+    // Auto-scroll chat to latest message or thinking state
+    LaunchedEffect(profile.chatHistory.size, transcript, isAiThinking) {
+        val totalItems = profile.chatHistory.size +
+            (if (isListening && transcript.isNotBlank()) 1 else 0) +
+            (if (isAiThinking) 1 else 0)
+        if (totalItems > 0) {
+            listState.animateScrollToItem(totalItems - 1)
+        }
     }
 
     val handleVoiceClick: () -> Unit = {
@@ -148,27 +172,27 @@ fun VoiceAnamnesisScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
             ) {
                 IconButton(
                     onClick = onNavigateBack,
                     modifier = Modifier
-                        .size(52.dp)
+                        .size(46.dp)
                         .clip(CircleShape)
                         .background(SurfaceContainerLowest)
-                        .border(2.dp, OutlineSlate, CircleShape)
+                        .border(1.5.dp, OutlineSlate, CircleShape)
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back to language selection",
                         tint = DeepMedicalTeal,
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(24.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(12.dp))
 
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Voice Anamnesis",
                         style = MaterialTheme.typography.titleMedium.copy(
@@ -177,8 +201,8 @@ fun VoiceAnamnesisScreen(
                         )
                     )
                     Text(
-                        text = "Turn ${currentTurn + 1} of $totalTurns",
-                        style = MaterialTheme.typography.bodyMedium.copy(
+                        text = "Turn ${currentTurn + 1} of $totalTurns • $currentTitle",
+                        style = MaterialTheme.typography.bodySmall.copy(
                             color = DeepMedicalTeal,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -192,15 +216,13 @@ fun VoiceAnamnesisScreen(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize()
-                .verticalScroll(scrollState)
-                .padding(horizontal = 20.dp, vertical = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(horizontal = 16.dp, vertical = 6.dp)
         ) {
             // 10-Step Progress Track
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 20.dp),
+                    .padding(bottom = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 repeat(totalTurns) { idx ->
@@ -209,113 +231,43 @@ fun VoiceAnamnesisScreen(
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .height(6.dp)
+                            .height(5.dp)
                             .clip(RoundedCornerShape(9999.dp))
                             .background(
                                 when {
                                     isPast -> DeepMedicalTeal
                                     isCurrent -> WarmAmber
-                                    else -> OutlineSlate.copy(alpha = 0.5f)
+                                    else -> OutlineSlate.copy(alpha = 0.4f)
                                 }
                             )
                     )
                 }
             }
 
-            // Current Clinical Question Card
-            Card(
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
-                border = BorderStroke(2.dp, OutlineSlate),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(22.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(9999.dp),
-                            color = SurfaceTeal,
-                            modifier = Modifier.padding(bottom = 10.dp)
-                        ) {
-                            Text(
-                                text = currentTitle,
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    color = DeepMedicalTeal,
-                                    fontWeight = FontWeight.Bold
-                                ),
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
-                            )
-                        }
-
-                        if (isAiThinking) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                CircularProgressIndicator(
-                                    color = WarmAmber,
-                                    strokeWidth = 2.dp,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "AI Analyzing...",
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        color = DarkAmber,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                )
-                            }
-                        }
-                    }
-
-                    Text(
-                        text = activePromptText,
-                        style = MaterialTheme.typography.headlineMedium.copy(
-                            color = DeepSlateText,
-                            fontSize = 22.sp,
-                            lineHeight = 32.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Audio Guidance Playback Widget
-            AudioPlaybackCard(
-                title = "Assistant Speech",
-                isPlaying = isSpeaking || isPlayingAudio,
-                progress = audioProgress,
-                onTogglePlay = { viewModel.toggleAudioPlayback() },
-                onReplay = { viewModel.replayAudio() },
-                onSeek = { viewModel.seekAudio(it) }
-            )
-
-            // Voice Error / Permission Alert if present
+            // Error alert if present
             if (voiceError != null) {
-                Spacer(modifier = Modifier.height(14.dp))
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(14.dp),
                     color = ErrorContainer,
                     border = BorderStroke(1.dp, ClinicalError),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp)
                 ) {
                     Row(
-                        modifier = Modifier.padding(14.dp),
+                        modifier = Modifier.padding(10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = Icons.Default.Warning,
                             contentDescription = null,
                             tint = OnErrorContainer,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(20.dp)
                         )
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = voiceError ?: "",
-                            style = MaterialTheme.typography.bodyMedium.copy(
+                            style = MaterialTheme.typography.bodySmall.copy(
                                 color = OnErrorContainer,
                                 fontWeight = FontWeight.SemiBold
                             ),
@@ -323,173 +275,298 @@ fun VoiceAnamnesisScreen(
                         )
                         IconButton(
                             onClick = { viewModel.clearVoiceError() },
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(28.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "Dismiss error",
                                 tint = OnErrorContainer,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Voice Orb Visualizer & Real-time Transcript with dynamic audio level
-            VoiceOrbVisualizer(
-                isListening = isListening,
-                isSpeaking = isSpeaking,
-                transcriptText = transcript,
-                rmsDb = rmsDb,
-                onOrbClick = handleVoiceClick
-            )
-
-            // Massive 80x80dp Circular Voice Action Button
-            MassiveVoiceActionButton(
-                isListening = isListening,
-                onClick = handleVoiceClick,
-                modifier = Modifier.padding(vertical = 12.dp)
-            )
-
-            Text(
-                text = when {
-                    isAiThinking -> "Thinking & formulating next question..."
-                    isSpeaking -> "Assistant is speaking..."
-                    isListening -> "Listening... Tap to submit answer"
-                    else -> "Tap microphone to speak"
-                },
-                style = MaterialTheme.typography.titleMedium.copy(
-                    color = when {
-                        isAiThinking || isListening -> DarkAmber
-                        isSpeaking -> DeepMedicalTeal
-                        else -> DeepSlateText
-                    },
-                    fontWeight = FontWeight.Bold
-                ),
-                modifier = Modifier.padding(bottom = 20.dp)
-            )
-
-            // Suggested Voice Response Chips (Tactile fallbacks for low-vision)
-            Text(
-                text = "Or tap a quick response:",
-                style = MaterialTheme.typography.labelLarge.copy(
-                    color = DeepSlateText,
-                    fontWeight = FontWeight.SemiBold
-                ),
+            // 1. Single Box with Rounded Corners for AI Assistant & Human Chat
+            Card(
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
+                border = BorderStroke(1.5.dp, OutlineSlate),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 12.dp)
-            )
-
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .weight(1f)
             ) {
-                currentHints.forEach { hint ->
-                    Surface(
-                        shape = RoundedCornerShape(9999.dp),
-                        color = SurfaceContainerLowest,
-                        border = BorderStroke(2.dp, DeepMedicalTeal.copy(alpha = 0.5f)),
-                        modifier = Modifier
-                            .clickable { viewModel.selectHintResponse(hint) }
-                            .semantics {
-                                contentDescription = "Quick reply: $hint"
-                            }
-                    ) {
-                        Text(
-                            text = hint,
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                color = DeepSlateText,
-                                fontWeight = FontWeight.SemiBold
-                            ),
-                            modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(28.dp))
-
-            // Recent Conversation Drawer / Collapsible History Card
-            if (profile.chatHistory.isNotEmpty()) {
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = SurfaceTeal,
-                    border = BorderStroke(1.5.dp, DeepMedicalTeal.copy(alpha = 0.35f)),
-                    modifier = Modifier.fillMaxWidth()
+                Column(
+                    modifier = Modifier.fillMaxSize()
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(bottom = 10.dp)
-                        ) {
-                            Text(
-                                text = "Conversation History (${profile.chatHistory.size} exchanges)",
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    color = DeepMedicalTeal,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            )
-                        }
+                    // Chat Message History (Assistant on left, Human on right)
+                    LazyColumn(
+                        state = listState,
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                    ) {
+                        val displayMessages = profile.chatHistory
 
-                        // Display last 3 messages for quick clinical context
-                        val recentMessages = profile.chatHistory.takeLast(4)
-                        recentMessages.forEach { msg ->
+                        items(displayMessages) { msg ->
                             val isAssistant = msg.sender == MessageSender.AI_ASSISTANT
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
+                                modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = if (isAssistant) Arrangement.Start else Arrangement.End
                             ) {
                                 Surface(
                                     shape = RoundedCornerShape(
-                                        topStart = 14.dp,
-                                        topEnd = 14.dp,
-                                        bottomStart = if (isAssistant) 2.dp else 14.dp,
-                                        bottomEnd = if (isAssistant) 14.dp else 2.dp
+                                        topStart = 16.dp,
+                                        topEnd = 16.dp,
+                                        bottomStart = if (isAssistant) 4.dp else 16.dp,
+                                        bottomEnd = if (isAssistant) 16.dp else 4.dp
                                     ),
-                                    color = if (isAssistant) SurfaceContainerLowest else DeepMedicalTeal,
-                                    border = if (isAssistant) BorderStroke(1.dp, OutlineSlate) else null,
-                                    modifier = Modifier.fillMaxWidth(0.88f)
+                                    color = if (isAssistant) SurfaceTeal else DeepMedicalTeal,
+                                    border = if (isAssistant) BorderStroke(1.dp, DeepMedicalTeal.copy(alpha = 0.25f)) else null,
+                                    modifier = Modifier.fillMaxWidth(0.85f)
                                 ) {
-                                    Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                    Column(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                                    ) {
                                         Text(
-                                            text = if (isAssistant) "Assistant" else "You",
+                                            text = if (isAssistant) "AI Assistant" else "You",
                                             style = MaterialTheme.typography.labelSmall.copy(
                                                 color = if (isAssistant) DeepMedicalTeal else Color.White.copy(alpha = 0.85f),
-                                                fontWeight = FontWeight.Bold
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 11.sp
                                             )
                                         )
-                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Spacer(modifier = Modifier.height(3.dp))
                                         Text(
                                             text = msg.text,
                                             style = MaterialTheme.typography.bodyMedium.copy(
-                                                color = if (isAssistant) DeepSlateText else Color.White
+                                                color = if (isAssistant) DeepSlateText else Color.White,
+                                                fontSize = 15.sp,
+                                                lineHeight = 21.sp,
+                                                fontWeight = FontWeight.Normal
                                             )
                                         )
                                     }
                                 }
                             }
                         }
+
+                        // Real-time streaming speech preview
+                        if (isListening && transcript.isNotBlank()) {
+                            item {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(16.dp),
+                                        color = HumanBlueGlass,
+                                        border = BorderStroke(1.5.dp, HumanPulseBlue),
+                                        modifier = Modifier.fillMaxWidth(0.85f)
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                                        ) {
+                                            Text(
+                                                text = "Listening...",
+                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                    color = HumanPulseBlue,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 11.sp
+                                                )
+                                            )
+                                            Spacer(modifier = Modifier.height(3.dp))
+                                            Text(
+                                                text = transcript,
+                                                style = MaterialTheme.typography.bodyMedium.copy(
+                                                    color = DeepSlateText,
+                                                    fontStyle = FontStyle.Italic,
+                                                    fontSize = 15.sp
+                                                )
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // AI Thinking Indicator
+                        if (isAiThinking) {
+                            item {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.Start
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(16.dp),
+                                        color = SurfaceTeal,
+                                        border = BorderStroke(1.dp, WarmAmber.copy(alpha = 0.5f)),
+                                        modifier = Modifier.padding(vertical = 2.dp)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                                        ) {
+                                            CircularProgressIndicator(
+                                                color = DarkAmber,
+                                                strokeWidth = 2.dp,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = "Analyzing & formulating next question...",
+                                                style = MaterialTheme.typography.bodySmall.copy(
+                                                    color = DarkAmber,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 30-second Connecting to AI Popup Indicator
+                    if (isConnectingToAi) {
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = WarmAmber.copy(alpha = 0.15f),
+                            border = BorderStroke(1.dp, WarmAmber),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    color = DarkAmber,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = aiConnectionStatus ?: "Connecting to AI assistant...",
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        color = DarkAmber,
+                                        fontWeight = FontWeight.SemiBold
+                                    ),
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+
+                    // Internet Connectivity Error Banner with Retry
+                    if (aiConnectionError != null) {
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = ErrorContainer,
+                            border = BorderStroke(1.dp, ClinicalError),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = OnErrorContainer,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = aiConnectionError ?: "",
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        color = OnErrorContainer,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 12.sp
+                                    ),
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                TextButton(
+                                    onClick = { viewModel.retryConnection() },
+                                    colors = ButtonDefaults.textButtonColors(
+                                        contentColor = ClinicalError
+                                    )
+                                ) {
+                                    Text(
+                                        text = "Retry",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { viewModel.dismissAiConnectionError() },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Dismiss error",
+                                        tint = OnErrorContainer,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Bottom Bar inside Chat Box: Circular Mic indicators
+                    // 2. Agent speaking: circular mic on bottom-left with pulsating orange wave & glass effect
+                    // 3. Human speaking: circular mic on bottom-right with pulsating blue wave
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(SurfaceContainerLowest)
+                            .border(BorderStroke(1.dp, OutlineSlate.copy(alpha = 0.4f)))
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            // Left: Agent Speaking Indicator (Orange glass wave)
+                            PulsatingVoicePill(
+                                isActive = isSpeaking || isPlayingAudio,
+                                isHuman = false,
+                                label = if (isSpeaking || isPlayingAudio) "Agent Speaking" else "Hear Voice",
+                                onClick = { viewModel.replayAudio() }
+                            )
+
+                            // Right: Human Speaking Indicator (Blue glass wave)
+                            PulsatingVoicePill(
+                                isActive = isListening,
+                                isHuman = true,
+                                label = if (isListening) "Listening..." else "Tap to Speak",
+                                rmsDb = rmsDb,
+                                onClick = handleVoiceClick
+                            )
+                        }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(24.dp))
             }
 
-            // Primary Navigation CTA
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Review Summary So Far / Complete
             LargePillButton(
                 text = if (currentTurn >= totalTurns - 1) "Complete & View Clinical Summary" else "Review Summary So Far",
                 onClick = onNavigateToSummary,
-                containerColor = DeepMedicalTeal
+                containerColor = DeepMedicalTeal,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp)
             )
-
-            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }

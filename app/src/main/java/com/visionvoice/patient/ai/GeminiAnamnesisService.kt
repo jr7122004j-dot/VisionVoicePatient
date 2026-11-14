@@ -27,7 +27,8 @@ import kotlinx.serialization.json.jsonPrimitive
  * and resilient offline rule-based fallback when no API key or network is present.
  */
 class GeminiAnamnesisService(
-    private val apiKey: String = BuildConfig.GEMINI_API_KEY
+    private val apiKey: String = BuildConfig.GEMINI_API_KEY,
+    val offlineFallbackEnabled: Boolean = BuildConfig.OFFLINE_FALLBACK_ENABLED
 ) {
     private val isLiveApiConfigured: Boolean = apiKey.isNotBlank() && apiKey != "\"\""
 
@@ -119,7 +120,7 @@ class GeminiAnamnesisService(
         if (isLiveApiConfigured) {
             try {
                 generativeModel = GenerativeModel(
-                    modelName = "gemini-flash-latest",
+                    modelName = "gemini-flash-lite-latest",
                     apiKey = apiKey,
                     generationConfig = generationConfig {
                         temperature = 0.4f
@@ -131,9 +132,13 @@ class GeminiAnamnesisService(
                     }
                 )
                 activeChat = generativeModel?.startChat()
+                android.util.Log.i("GeminiAnamnesis", "✨ Initialized live Gemini session with model: gemini-flash-lite-latest for language: $language")
             } catch (e: Exception) {
+                android.util.Log.e("GeminiAnamnesis", "Failed to initialize Gemini session", e)
                 activeChat = null
             }
+        } else {
+            android.util.Log.w("GeminiAnamnesis", "Live Gemini API not configured or key invalid. Running in offline rule-based mode.")
         }
     }
 
@@ -161,28 +166,101 @@ class GeminiAnamnesisService(
         """.trimIndent()
     }
 
+    suspend fun generateInitialGreeting(language: String): String = withContext(Dispatchers.IO) {
+        if (activeChat == null) {
+            initializeSession(language)
+        }
+
+        if (isLiveApiConfigured && activeChat != null) {
+            try {
+                android.util.Log.d("GeminiAnamnesis", "Generating initial greeting from Gemini in $language")
+                val greetingPrompt = """
+                    Start the clinical screening anamnesis session.
+                    The patient has chosen $language.
+                    Greet the patient warmly as their female VisionVoice clinical screening assistant (क्लिनिकल सहायिका).
+                    Introduce yourself, and ask the first turn question:
+                    Ask what daily work or occupation they do, and what primary vision or eye difficulty they are experiencing.
+                    Remember: Brevity is critical (1 to 2 spoken sentences, max 25-30 words).
+                    Respond strictly in $language.
+                """.trimIndent()
+
+                val reply = kotlinx.coroutines.withTimeoutOrNull(7000L) {
+                    val response = activeChat?.sendMessage(
+                        content {
+                            text(greetingPrompt)
+                        }
+                    )
+                    response?.text?.trim()
+                }
+
+                if (!reply.isNullOrBlank()) {
+                    android.util.Log.i("GeminiAnamnesis", "⚡ Received LIVE initial greeting from Gemini: $reply")
+                    return@withContext reply
+                } else if (!offlineFallbackEnabled) {
+                    throw java.io.IOException("Gemini response timed out or returned empty for initial greeting")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("GeminiAnamnesis", "Error generating initial greeting from Gemini", e)
+                if (!offlineFallbackEnabled) {
+                    throw e
+                }
+            }
+        } else if (!offlineFallbackEnabled) {
+            throw IllegalStateException("Gemini API is not configured and offline fallback is disabled")
+        }
+
+        // Offline fallback (only when offlineFallbackEnabled is true)
+        val q = fallbackTenTurnQuestions[0]
+        return@withContext if (language.equals("English", ignoreCase = true)) {
+            q.promptEnglish
+        } else {
+            q.promptHindi
+        }
+    }
+
     suspend fun sendPatientMessage(
         turnIndex: Int,
         patientText: String
     ): String = withContext(Dispatchers.IO) {
-        if (isLiveApiConfigured && activeChat != null) {
-            try {
-                val response = activeChat?.sendMessage(
-                    content {
-                        text("Patient response at turn ${turnIndex + 1}: $patientText")
-                    }
-                )
-                val reply = response?.text?.trim()
-                if (!reply.isNullOrBlank()) {
-                    android.util.Log.d("GeminiAnamnesis", "Received reply from Gemini: $reply")
-                    return@withContext reply
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("GeminiAnamnesis", "Gemini API error, falling back to rule-based prompt", e)
+        if (isLiveApiConfigured) {
+            if (activeChat == null) {
+                initializeSession(currentLanguage)
             }
+
+            if (activeChat != null) {
+                try {
+                    android.util.Log.d("GeminiAnamnesis", "Sending message to Gemini (turn ${turnIndex + 1}): $patientText")
+                    val reply = kotlinx.coroutines.withTimeoutOrNull(7000L) {
+                        val response = activeChat?.sendMessage(
+                            content {
+                                text("Patient response at turn ${turnIndex + 1}: $patientText")
+                            }
+                        )
+                        response?.text?.trim()
+                    }
+                    if (!reply.isNullOrBlank()) {
+                        android.util.Log.i("GeminiAnamnesis", "⚡ Received LIVE reply from Gemini: $reply")
+                        return@withContext reply
+                    } else {
+                        android.util.Log.w("GeminiAnamnesis", "Gemini returned null or timed out")
+                        if (!offlineFallbackEnabled) {
+                            throw java.io.IOException("Gemini response timed out or returned empty")
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("GeminiAnamnesis", "Gemini API error", e)
+                    if (!offlineFallbackEnabled) {
+                        throw e
+                    }
+                }
+            } else if (!offlineFallbackEnabled) {
+                throw java.io.IOException("Active Gemini chat session is unavailable")
+            }
+        } else if (!offlineFallbackEnabled) {
+            throw IllegalStateException("Gemini API is not configured and offline fallback is disabled")
         }
 
-        // Offline / Fallback question progression
+        // Offline / Fallback question progression (only when offlineFallbackEnabled is true)
         val nextTurnIdx = (turnIndex + 1).coerceAtMost(fallbackTenTurnQuestions.lastIndex)
         val q = fallbackTenTurnQuestions[nextTurnIdx]
         return@withContext if (currentLanguage.equals("English", ignoreCase = true)) {
@@ -228,7 +306,9 @@ class GeminiAnamnesisService(
                     }
                 """.trimIndent()
 
-                val result = generativeModel?.generateContent(content { text(extractionPrompt) })
+                val result = kotlinx.coroutines.withTimeoutOrNull(9000L) {
+                    generativeModel?.generateContent(content { text(extractionPrompt) })
+                }
                 val rawJson = result?.text?.replace("```json", "")?.replace("```", "")?.trim()
 
                 if (!rawJson.isNullOrBlank()) {
