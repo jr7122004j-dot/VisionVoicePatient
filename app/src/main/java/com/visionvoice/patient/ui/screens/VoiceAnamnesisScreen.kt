@@ -69,8 +69,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.visionvoice.patient.data.model.ChatMessage
 import com.visionvoice.patient.data.model.MessageSender
+import com.visionvoice.patient.ui.components.AiThinkingBubble
 import com.visionvoice.patient.ui.components.AppInfoDialog
 import com.visionvoice.patient.ui.components.LanguageOnboardingDialog
 import com.visionvoice.patient.ui.components.LargePillButton
@@ -490,31 +490,9 @@ fun VoiceAnamnesisScreen(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.Start
                                 ) {
-                                    Surface(
-                                        shape = RoundedCornerShape(16.dp),
-                                        color = SurfaceTeal,
-                                        border = BorderStroke(1.dp, WarmAmber.copy(alpha = 0.5f)),
+                                    AiThinkingBubble(
                                         modifier = Modifier.padding(vertical = 2.dp)
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                                        ) {
-                                            CircularProgressIndicator(
-                                                color = DarkAmber,
-                                                strokeWidth = 2.dp,
-                                                modifier = Modifier.size(14.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text(
-                                                text = "Analyzing & formulating next question...",
-                                                style = MaterialTheme.typography.bodySmall.copy(
-                                                    color = DarkAmber,
-                                                    fontWeight = FontWeight.SemiBold
-                                                )
-                                            )
-                                        }
-                                    }
+                                    )
                                 }
                             }
                         }
