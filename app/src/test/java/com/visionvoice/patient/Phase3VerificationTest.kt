@@ -30,6 +30,9 @@ class Phase3VerificationTest {
     @Test
     fun testQrPayloadCompressorRoundTrip() {
         val profile = VisionProfile(
+            patientName = "Ramesh Kumar",
+            patientAge = 48,
+            patientGender = "Male",
             additionalInformation = listOf("Diabetes for 5 years", "Evening glare"),
             refractiveSymptoms = listOf("Difficulty threading needle", "Frontal headaches"),
             pathologyIndicators = listOf("Occasional floaters")
@@ -46,6 +49,7 @@ class Phase3VerificationTest {
         assertNotNull(decompressed)
         assertTrue(decompressed.contains(profile.id))
         assertTrue(decompressed.contains(profile.backupCode))
+        assertTrue(decompressed.contains("Ramesh Kumar"))
         assertTrue(decompressed.contains("Diabetes for 5 years"))
     }
 

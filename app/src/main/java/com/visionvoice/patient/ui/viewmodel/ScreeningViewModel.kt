@@ -27,6 +27,20 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
         private const val KEY_ONBOARDING_COMPLETED = "pref_onboarding_completed"
         private const val KEY_SELECTED_LANGUAGE = "pref_selected_language"
         private const val KEY_AUDIO_GUIDANCE = "pref_audio_guidance"
+        private const val KEY_PATIENT_NAME = "pref_patient_name"
+        private const val KEY_PATIENT_AGE = "pref_patient_age"
+        private const val KEY_PATIENT_GENDER = "pref_patient_gender"
+    }
+
+    enum class AnamnesisStage(
+        val stageNumber: Int,
+        val title: String,
+        val subtitle: String
+    ) {
+        PROFILE_CONTEXT(1, "Profile & Context", "Demographics & language verified"),
+        VISION_WORK(2, "Vision Needs & Work", "Occupational demands & lighting"),
+        HEALTH_SYMPTOMS(3, "Health & Symptoms", "Refraction, smoke & systemic"),
+        REVIEW_HANDOFF(4, "Review & Handoff", "Triage summary ready for doctor")
     }
 
     private val prefs: SharedPreferences = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -50,6 +64,24 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _currentTurnIndex = MutableStateFlow(0)
     val currentTurnIndex: StateFlow<Int> = _currentTurnIndex.asStateFlow()
+
+    fun getCurrentStage(): AnamnesisStage {
+        val turn = _currentTurnIndex.value
+        return when {
+            turn <= 2 -> AnamnesisStage.VISION_WORK
+            turn in 3..6 -> AnamnesisStage.HEALTH_SYMPTOMS
+            else -> AnamnesisStage.REVIEW_HANDOFF
+        }
+    }
+
+    fun getStageProgressFraction(): Float {
+        val turn = _currentTurnIndex.value
+        return when {
+            turn <= 2 -> 0.25f + (turn / 3f) * 0.25f
+            turn in 3..6 -> 0.50f + ((turn - 3) / 4f) * 0.25f
+            else -> 0.75f + ((turn - 7) / 3f).coerceAtMost(1f) * 0.25f
+        }.coerceIn(0.25f, 1.0f)
+    }
 
     private val _isAiThinking = MutableStateFlow(false)
     val isAiThinking: StateFlow<Boolean> = _isAiThinking.asStateFlow()
@@ -83,16 +115,23 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
     val playingMessageId: StateFlow<String?> = _playingMessageId.asStateFlow()
 
     init {
+        val savedName = prefs.getString(KEY_PATIENT_NAME, "") ?: ""
+        val savedAge = prefs.getInt(KEY_PATIENT_AGE, 0)
+        val savedGender = prefs.getString(KEY_PATIENT_GENDER, "Male") ?: "Male"
         val savedLanguage = prefs.getString(KEY_SELECTED_LANGUAGE, "Hindi") ?: "Hindi"
         val savedAudioGuidance = prefs.getBoolean(KEY_AUDIO_GUIDANCE, true)
+
         _profile.update { current ->
             current.copy(
+                patientName = savedName,
+                patientAge = savedAge,
+                patientGender = savedGender,
                 selectedLanguage = savedLanguage,
                 audioGuidanceEnabled = savedAudioGuidance
             )
         }
         voiceManager.setLanguage(savedLanguage)
-        initializeSession(savedLanguage)
+        initializeSession(savedLanguage, savedName, savedAge, savedGender)
 
         viewModelScope.launch {
             voiceManager.isSpeaking.collect { speaking ->
@@ -104,28 +143,56 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    private fun initializeSession(language: String) {
-        geminiService.initializeSession(language)
+    private fun initializeSession(
+        language: String,
+        name: String = _profile.value.patientName,
+        age: Int = _profile.value.patientAge,
+        gender: String = _profile.value.patientGender
+    ) {
+        geminiService.initializeSession(language, name, age, gender)
         _profile.update { current ->
             current.copy(
                 selectedLanguage = language,
+                patientName = name,
+                patientAge = age,
+                patientGender = gender,
                 chatHistory = emptyList()
             )
         }
     }
 
-    fun completeOnboarding(language: String, audioGuidance: Boolean) {
+    fun completeOnboarding(
+        name: String,
+        age: Int,
+        gender: String,
+        language: String,
+        audioGuidance: Boolean
+    ) {
         prefs.edit()
             .putBoolean(KEY_ONBOARDING_COMPLETED, true)
+            .putString(KEY_PATIENT_NAME, name)
+            .putInt(KEY_PATIENT_AGE, age)
+            .putString(KEY_PATIENT_GENDER, gender)
             .putString(KEY_SELECTED_LANGUAGE, language)
             .putBoolean(KEY_AUDIO_GUIDANCE, audioGuidance)
             .apply()
+
+        _profile.update { current ->
+            current.copy(
+                patientName = name,
+                patientAge = age,
+                patientGender = gender,
+                selectedLanguage = language,
+                audioGuidanceEnabled = audioGuidance
+            )
+        }
 
         setLanguage(language)
         setAudioGuidance(audioGuidance)
         _showOnboardingDialog.value = false
 
-        loadInitialGreeting(language)
+        initializeSession(language, name, age, gender)
+        loadInitialGreeting(language, name, age, gender)
     }
 
     fun openLanguageSettingsDialog() {
@@ -138,18 +205,41 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun updateLanguageSettings(language: String, audioGuidance: Boolean) {
+    fun updateLanguageSettings(
+        name: String,
+        age: Int,
+        gender: String,
+        language: String,
+        audioGuidance: Boolean
+    ) {
         val languageChanged = _profile.value.selectedLanguage != language
+        val detailsChanged = _profile.value.patientName != name ||
+            _profile.value.patientAge != age ||
+            _profile.value.patientGender != gender
+
         prefs.edit()
+            .putString(KEY_PATIENT_NAME, name)
+            .putInt(KEY_PATIENT_AGE, age)
+            .putString(KEY_PATIENT_GENDER, gender)
             .putString(KEY_SELECTED_LANGUAGE, language)
             .putBoolean(KEY_AUDIO_GUIDANCE, audioGuidance)
             .apply()
+
+        _profile.update { current ->
+            current.copy(
+                patientName = name,
+                patientAge = age,
+                patientGender = gender,
+                selectedLanguage = language,
+                audioGuidanceEnabled = audioGuidance
+            )
+        }
 
         setLanguage(language)
         setAudioGuidance(audioGuidance)
         _showOnboardingDialog.value = false
 
-        if (languageChanged) {
+        if (languageChanged || detailsChanged) {
             resetScreening()
         }
     }
@@ -164,9 +254,12 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
         _lastPendingPatientResponse.value = null
         val currentLang = _profile.value.selectedLanguage
         val currentAudio = _profile.value.audioGuidanceEnabled
-        initializeSession(currentLang)
+        val name = _profile.value.patientName
+        val age = _profile.value.patientAge
+        val gender = _profile.value.patientGender
+        initializeSession(currentLang, name, age, gender)
         _profile.update { it.copy(audioGuidanceEnabled = currentAudio) }
-        loadInitialGreeting(currentLang)
+        loadInitialGreeting(currentLang, name, age, gender)
     }
 
     fun startAnamnesis() {
@@ -180,11 +273,21 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
         if (existingAssistantMsg != null) {
             triggerAudioGuidance(existingAssistantMsg)
         } else {
-            loadInitialGreeting(_profile.value.selectedLanguage)
+            loadInitialGreeting(
+                _profile.value.selectedLanguage,
+                _profile.value.patientName,
+                _profile.value.patientAge,
+                _profile.value.patientGender
+            )
         }
     }
 
-    fun loadInitialGreeting(language: String = _profile.value.selectedLanguage) {
+    fun loadInitialGreeting(
+        language: String = _profile.value.selectedLanguage,
+        name: String = _profile.value.patientName,
+        age: Int = _profile.value.patientAge,
+        gender: String = _profile.value.patientGender
+    ) {
         if (_profile.value.chatHistory.any { it.sender == MessageSender.AI_ASSISTANT }) {
             return
         }
@@ -199,7 +302,7 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
 
             while (System.currentTimeMillis() - startTime < maxRetryDurationMs) {
                 try {
-                    greeting = geminiService.generateInitialGreeting(language)
+                    greeting = geminiService.generateInitialGreeting(language, name, age, gender)
                     if (!greeting.isNullOrBlank()) {
                         break
                     }

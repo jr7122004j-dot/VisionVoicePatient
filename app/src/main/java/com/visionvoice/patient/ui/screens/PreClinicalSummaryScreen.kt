@@ -25,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Work
@@ -310,6 +311,14 @@ fun PreClinicalSummaryScreen(
                             fontWeight = FontWeight.Bold
                         )
                     )
+
+                    if (profile.patientName.isNotBlank() || profile.patientAge > 0) {
+                        SummaryItemRow(
+                            icon = Icons.Default.Person,
+                            title = "Patient Demographics",
+                            value = "${profile.patientName.ifEmpty { "Patient" }} • ${if (profile.patientAge > 0) "${profile.patientAge} years" else "Adult"} • ${profile.patientGender} (${profile.selectedLanguage})"
+                        )
+                    }
 
                     SummaryItemRow(
                         icon = Icons.Default.Work,

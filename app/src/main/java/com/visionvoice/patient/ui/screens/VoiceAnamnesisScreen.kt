@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -320,28 +319,84 @@ fun VoiceAnamnesisScreen(
                 .fillMaxSize()
                 .padding(horizontal = 16.dp, vertical = 6.dp)
         ) {
-            // Sleek Continuous Progress Bar matching design mockup
-            val progressFraction = ((currentTurn + 1).toFloat() / totalTurns.toFloat()).coerceIn(0.05f, 1f)
-            val animatedProgress by animateFloatAsState(
-                targetValue = progressFraction,
-                label = "screening_progress"
-            )
+            // Smooth 4-Stage Clinical Progression Header
+            val currentStage = viewModel.getCurrentStage()
+            val stageNum = currentStage.stageNumber
 
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 4.dp, vertical = 6.dp)
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(9999.dp))
-                    .background(OutlineSlate.copy(alpha = 0.35f))
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(animatedProgress)
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape(9999.dp))
-                        .background(WarmAmber)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            shape = CircleShape,
+                            color = WarmAmber.copy(alpha = 0.18f),
+                            modifier = Modifier.size(18.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "$stageNum",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        color = DarkAmber,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 10.5.sp
+                                    )
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Stage $stageNum of 4: ${currentStage.title}",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                color = DeepSlateText,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        )
+                    }
+
+                    if (profile.patientName.isNotBlank()) {
+                        Text(
+                            text = "${profile.patientName}${if (profile.patientAge > 0) " (${profile.patientAge}y" else ""}${if (profile.patientGender.isNotBlank()) ", ${profile.patientGender.take(1)})" else if (profile.patientAge > 0) ")" else ""}",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = DeepMedicalTeal,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 11.5.sp
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // 4 Smooth Segmented Milestone Bars
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    for (step in 1..4) {
+                        val barColor = when {
+                            step < stageNum -> DeepMedicalTeal
+                            step == stageNum -> WarmAmber
+                            else -> OutlineSlate.copy(alpha = 0.35f)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(9999.dp))
+                                .background(barColor)
+                        )
+                    }
+                }
             }
 
             // Error alert if present
@@ -772,17 +827,20 @@ fun VoiceAnamnesisScreen(
 
     if (showOnboardingDialog) {
         LanguageOnboardingDialog(
+            initialName = profile.patientName,
+            initialAge = profile.patientAge,
+            initialGender = profile.patientGender,
             initialLanguage = profile.selectedLanguage,
             initialAudioGuidance = profile.audioGuidanceEnabled,
             canDismiss = isOnboardingCompleted,
             onDismiss = {
                 viewModel.dismissLanguageSettingsDialog()
             },
-            onConfirm = { chosenLang, audioEnabled ->
+            onConfirm = { name, age, gender, chosenLang, audioEnabled ->
                 if (!isOnboardingCompleted) {
-                    viewModel.completeOnboarding(chosenLang, audioEnabled)
+                    viewModel.completeOnboarding(name, age, gender, chosenLang, audioEnabled)
                 } else {
-                    viewModel.updateLanguageSettings(chosenLang, audioEnabled)
+                    viewModel.updateLanguageSettings(name, age, gender, chosenLang, audioEnabled)
                 }
             }
         )

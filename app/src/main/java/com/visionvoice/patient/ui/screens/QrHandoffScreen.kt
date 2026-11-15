@@ -254,7 +254,26 @@ fun QrHandoffScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            if (profile.patientName.isNotBlank()) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Surface(
+                    shape = RoundedCornerShape(9999.dp),
+                    color = Color.White,
+                    border = BorderStroke(1.dp, OutlineSlate)
+                ) {
+                    Text(
+                        text = "${profile.patientName} • ${if (profile.patientAge > 0) "${profile.patientAge} yrs • " else ""}${profile.patientGender}",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = DeepSlateText,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp
+                        ),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
 
             // Offline & Security Badges
             Card(

@@ -61,6 +61,11 @@ data class VisionProfile(
     val selectedLanguage: String = "Hindi",
     val audioGuidanceEnabled: Boolean = true,
 
+    // Patient Demographics
+    val patientName: String = "",
+    val patientAge: Int = 0,
+    val patientGender: String = "", // "MALE", "FEMALE", "OTHER"
+
     // Core 6 Clinical Dimensions
     val occupationalDemand: OccupationalDemand = OccupationalDemand(),
     val environmentalHazards: List<String> = emptyList(),
@@ -96,6 +101,9 @@ data class VisionProfile(
             HandoffSummary(
                 refId = id,
                 code = backupCode,
+                name = patientName,
+                age = patientAge,
+                gender = patientGender,
                 lang = selectedLanguage,
                 occ = "${occupationalDemand.occupation} (${occupationalDemand.primaryDistance})",
                 env = environmentalHazards,
@@ -124,6 +132,9 @@ data class VisionProfile(
 data class HandoffSummary(
     val refId: String,
     val code: String,
+    val name: String = "",
+    val age: Int = 0,
+    val gender: String = "",
     val lang: String,
     val occ: String,
     val env: List<String>,
