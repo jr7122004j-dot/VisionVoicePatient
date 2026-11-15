@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -104,38 +105,41 @@ fun QrHandoffScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 IconButton(
                     onClick = onNavigateBack,
                     modifier = Modifier
-                        .size(52.dp)
+                        .size(38.dp)
                         .clip(CircleShape)
-                        .background(SurfaceContainerLowest)
-                        .border(2.dp, OutlineSlate, CircleShape)
+                        .background(SurfaceTeal)
+                        .border(1.dp, DeepMedicalTeal.copy(alpha = 0.25f), CircleShape)
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back to summary",
                         tint = DeepMedicalTeal,
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(12.dp))
 
                 Column {
                     Text(
                         text = "Clinic Handoff",
                         style = MaterialTheme.typography.titleMedium.copy(
                             color = DeepSlateText,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp
                         )
                     )
                     Text(
                         text = "Secure Ophthalmic Transfer",
                         style = MaterialTheme.typography.bodyMedium.copy(
-                            color = DeepSlateText.copy(alpha = 0.75f)
+                            color = DeepSlateText.copy(alpha = 0.75f),
+                            fontSize = 13.sp
                         )
                     )
                 }

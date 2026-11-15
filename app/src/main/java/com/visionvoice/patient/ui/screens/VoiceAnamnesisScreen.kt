@@ -30,7 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Language
@@ -66,6 +66,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -183,85 +184,90 @@ fun VoiceAnamnesisScreen(
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                // Left: Vision Voice Pill (clickable, opens info dialog)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (showBackButton) {
-                        IconButton(
-                            onClick = {
-                                viewModel.stopAudio()
-                                onNavigateBack()
-                            },
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(SurfaceTeal)
-                                .border(1.dp, DeepMedicalTeal.copy(alpha = 0.25f), CircleShape)
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back",
-                                tint = DeepMedicalTeal,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                    }
-
-                    Surface(
-                        shape = RoundedCornerShape(9999.dp),
-                        color = SurfaceTeal,
-                        border = BorderStroke(1.dp, DeepMedicalTeal.copy(alpha = 0.25f)),
+                if (showBackButton) {
+                    IconButton(
+                        onClick = {
+                            viewModel.stopAudio()
+                            onNavigateBack()
+                        },
                         modifier = Modifier
-                            .clip(RoundedCornerShape(9999.dp))
-                            .clickable { showAppInfoDialog = true }
-                            .semantics {
-                                contentDescription = "About Vision Voice"
-                            }
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(SurfaceTeal)
+                            .border(1.dp, DeepMedicalTeal.copy(alpha = 0.25f), CircleShape)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(start = 5.dp, end = 14.dp, top = 4.dp, bottom = 4.dp)
-                        ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = Color.White,
-                                border = BorderStroke(1.dp, DeepMedicalTeal.copy(alpha = 0.2f)),
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Default.Visibility,
-                                        contentDescription = "Vision Voice",
-                                        tint = DeepMedicalTeal,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Vision Voice",
-                                style = MaterialTheme.typography.labelLarge.copy(
-                                    color = DeepMedicalTeal,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
-                                )
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = DeepMedicalTeal,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
 
-                // Right: Language Selector Pill
+                // Left: Vision Voice Pill (Equal Width)
                 Surface(
                     shape = RoundedCornerShape(9999.dp),
                     color = SurfaceTeal,
                     border = BorderStroke(1.dp, DeepMedicalTeal.copy(alpha = 0.25f)),
                     modifier = Modifier
+                        .weight(1f)
+                        .height(38.dp)
+                        .clip(RoundedCornerShape(9999.dp))
+                        .clickable { showAppInfoDialog = true }
+                        .semantics {
+                            contentDescription = "About Vision Voice"
+                        }
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 8.dp)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color.White,
+                            border = BorderStroke(1.dp, DeepMedicalTeal.copy(alpha = 0.2f)),
+                            modifier = Modifier.size(26.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Visibility,
+                                    contentDescription = null,
+                                    tint = DeepMedicalTeal,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Vision Voice",
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                color = DeepMedicalTeal,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.5.sp
+                            ),
+                            maxLines = 1
+                        )
+                    }
+                }
+
+                // Right: Language Selector Pill (Equal Width)
+                Surface(
+                    shape = RoundedCornerShape(9999.dp),
+                    color = SurfaceTeal,
+                    border = BorderStroke(1.dp, DeepMedicalTeal.copy(alpha = 0.25f)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(38.dp)
                         .clip(RoundedCornerShape(9999.dp))
                         .clickable {
                             viewModel.openLanguageSettingsDialog()
@@ -272,7 +278,10 @@ fun VoiceAnamnesisScreen(
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 8.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Language,
@@ -287,7 +296,10 @@ fun VoiceAnamnesisScreen(
                                 color = DeepSlateText,
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 13.sp
-                            )
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Icon(
@@ -631,20 +643,23 @@ fun VoiceAnamnesisScreen(
                                         .fillMaxWidth()
                                         .padding(horizontal = 10.dp, vertical = 6.dp)
                                 ) {
-                                    // Play / Pause Circle Button
-                                    IconButton(
-                                        onClick = { viewModel.toggleRecordedAudioPlayback() },
+                                    // Play / Pause Circle Button (36dp matching controls)
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = DeepMedicalTeal,
                                         modifier = Modifier
-                                            .size(40.dp)
+                                            .size(36.dp)
                                             .clip(CircleShape)
-                                            .background(DeepMedicalTeal)
+                                            .clickable { viewModel.toggleRecordedAudioPlayback() }
                                     ) {
-                                        Icon(
-                                            imageVector = if (isPatientAudioPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                            contentDescription = if (isPatientAudioPlaying) "Pause My Audio" else "Play My Audio",
-                                            tint = Color.White,
-                                            modifier = Modifier.size(22.dp)
-                                        )
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = if (isPatientAudioPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                                contentDescription = if (isPatientAudioPlaying) "Pause My Audio" else "Play My Audio",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
                                     }
 
                                     Spacer(modifier = Modifier.width(10.dp))
@@ -674,51 +689,45 @@ fun VoiceAnamnesisScreen(
                                         )
                                     }
 
-                                    // Re-record Button
-                                    IconButton(
-                                        onClick = { viewModel.discardRecordedAudio() },
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    // Retake / Discard Button (36dp circular button)
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = Color.White,
+                                        border = BorderStroke(1.dp, OutlineSlate),
                                         modifier = Modifier
                                             .size(36.dp)
                                             .clip(CircleShape)
-                                            .background(Color.White)
-                                            .border(1.dp, OutlineSlate, CircleShape)
+                                            .clickable { viewModel.discardRecordedAudio() }
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Replay,
-                                            contentDescription = "Record Again",
-                                            tint = DeepSlateText,
-                                            modifier = Modifier.size(18.dp)
-                                        )
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.Replay,
+                                                contentDescription = "Record Again",
+                                                tint = DeepSlateText,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
                                     }
 
                                     Spacer(modifier = Modifier.width(8.dp))
 
-                                    // Send Button
+                                    // Send Audio Button (36dp circular icon button)
                                     Surface(
-                                        shape = RoundedCornerShape(9999.dp),
+                                        shape = CircleShape,
                                         color = DeepMedicalTeal,
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(9999.dp))
+                                            .size(36.dp)
+                                            .clip(CircleShape)
                                             .clickable { viewModel.submitCurrentResponse() }
                                     ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
-                                        ) {
-                                            Text(
-                                                text = "Send",
-                                                style = MaterialTheme.typography.labelMedium.copy(
-                                                    color = Color.White,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 13.sp
-                                                )
-                                            )
-                                            Spacer(modifier = Modifier.width(4.dp))
+                                        Box(contentAlignment = Alignment.Center) {
                                             Icon(
-                                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                                contentDescription = "Send to Assistant",
+                                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                                contentDescription = "Send Audio to Assistant",
                                                 tint = Color.White,
-                                                modifier = Modifier.size(14.dp)
+                                                modifier = Modifier.size(17.dp)
                                             )
                                         }
                                     }
@@ -744,7 +753,7 @@ fun VoiceAnamnesisScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Review Summary So Far / Complete
             LargePillButton(
@@ -756,7 +765,7 @@ fun VoiceAnamnesisScreen(
                 containerColor = DeepMedicalTeal,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 8.dp)
+                    .padding(bottom = 4.dp)
             )
         }
     }

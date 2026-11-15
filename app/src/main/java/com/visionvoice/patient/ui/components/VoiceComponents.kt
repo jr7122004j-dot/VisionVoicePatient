@@ -31,7 +31,6 @@ import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -179,7 +178,6 @@ fun AudioPlaybackCard(
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 14.dp)
@@ -192,7 +190,7 @@ fun AudioPlaybackCard(
                     imageVector = Icons.AutoMirrored.Filled.VolumeUp,
                     contentDescription = null,
                     tint = DeepMedicalTeal,
-                    modifier = Modifier.size(26.dp)
+                    modifier = Modifier.size(24.dp)
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {
@@ -213,39 +211,47 @@ fun AudioPlaybackCard(
                 }
             }
 
+            Spacer(modifier = Modifier.width(12.dp))
+
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                IconButton(
-                    onClick = onReplay,
+                Surface(
+                    shape = CircleShape,
+                    color = Color.White,
+                    border = BorderStroke(1.dp, OutlineSlate),
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(36.dp)
                         .clip(CircleShape)
-                        .background(Color.White)
-                        .border(1.5.dp, OutlineSlate, CircleShape)
+                        .clickable(onClick = onReplay)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Replay,
-                        contentDescription = "Replay audio summary",
-                        tint = DeepMedicalTeal,
-                        modifier = Modifier.size(22.dp)
-                    )
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.Replay,
+                            contentDescription = "Replay audio summary",
+                            tint = DeepMedicalTeal,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
 
-                IconButton(
-                    onClick = onTogglePlay,
+                Surface(
+                    shape = CircleShape,
+                    color = DeepMedicalTeal,
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(36.dp)
                         .clip(CircleShape)
-                        .background(DeepMedicalTeal)
+                        .clickable(onClick = onTogglePlay)
                 ) {
-                    Icon(
-                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (isPlaying) "Pause audio" else "Play audio",
-                        tint = Color.White,
-                        modifier = Modifier.size(24.dp)
-                    )
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (isPlaying) "Pause audio" else "Play audio",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
         }
@@ -276,13 +282,13 @@ fun LargePillButton(
         ),
         modifier = modifier
             .fillMaxWidth()
-            .height(60.dp)
-            .shadow(3.dp, RoundedCornerShape(9999.dp))
+            .height(48.dp)
+            .shadow(2.dp, RoundedCornerShape(9999.dp))
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelLarge.copy(
-                fontSize = 18.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center
             )
