@@ -79,6 +79,9 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
     private val _isPlayingAudio = MutableStateFlow(false)
     val isPlayingAudio: StateFlow<Boolean> = _isPlayingAudio.asStateFlow()
 
+    private val _playingMessageId = MutableStateFlow<String?>(null)
+    val playingMessageId: StateFlow<String?> = _playingMessageId.asStateFlow()
+
     init {
         val savedLanguage = prefs.getString(KEY_SELECTED_LANGUAGE, "Hindi") ?: "Hindi"
         val savedAudioGuidance = prefs.getBoolean(KEY_AUDIO_GUIDANCE, true)
@@ -90,6 +93,15 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
         }
         voiceManager.setLanguage(savedLanguage)
         initializeSession(savedLanguage)
+
+        viewModelScope.launch {
+            voiceManager.isSpeaking.collect { speaking ->
+                if (!speaking && _isPlayingAudio.value) {
+                    _playingMessageId.value = null
+                    _isPlayingAudio.value = false
+                }
+            }
+        }
     }
 
     private fun initializeSession(language: String) {
@@ -456,6 +468,7 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
         voiceManager.stopSpeaking()
         voiceManager.stopAudioPlayback()
         _isPlayingAudio.value = false
+        _playingMessageId.value = null
     }
 
     fun dismissAiConnectionError() {
@@ -510,6 +523,22 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
         return turnTitles.getOrElse(_currentTurnIndex.value) { "Clinical Screening" }
     }
 
+    fun toggleMessageAudio(message: ChatMessage) {
+        if (_playingMessageId.value == message.id && (voiceManager.isSpeaking.value || _isPlayingAudio.value)) {
+            stopAudio()
+        } else {
+            stopAudio()
+            _playingMessageId.value = message.id
+            _isPlayingAudio.value = true
+            voiceManager.speak(message.text) {
+                if (_playingMessageId.value == message.id) {
+                    _playingMessageId.value = null
+                    _isPlayingAudio.value = false
+                }
+            }
+        }
+    }
+
     private fun speakPrompt(prompt: String) {
         _isPlayingAudio.value = true
         voiceManager.speak(prompt) {
@@ -517,9 +546,18 @@ class ScreeningViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun triggerAudioGuidance(prompt: String) {
+    fun triggerAudioGuidance(prompt: String, messageId: String? = null) {
         if (_profile.value.audioGuidanceEnabled) {
-            speakPrompt(prompt)
+            val targetId = messageId ?: _profile.value.chatHistory
+                .lastOrNull { it.sender == MessageSender.AI_ASSISTANT }?.id
+            _playingMessageId.value = targetId
+            _isPlayingAudio.value = true
+            voiceManager.speak(prompt) {
+                if (_playingMessageId.value == targetId) {
+                    _playingMessageId.value = null
+                    _isPlayingAudio.value = false
+                }
+            }
         }
     }
 

@@ -74,9 +74,8 @@ import com.visionvoice.patient.ui.components.AiThinkingBubble
 import com.visionvoice.patient.ui.components.AppInfoDialog
 import com.visionvoice.patient.ui.components.LanguageOnboardingDialog
 import com.visionvoice.patient.ui.components.LargePillButton
+import com.visionvoice.patient.ui.components.MessageAudioIndicator
 import com.visionvoice.patient.ui.components.PulsatingVoicePill
-import com.visionvoice.patient.ui.theme.AgentOrangeGlass
-import com.visionvoice.patient.ui.theme.AgentPulseOrange
 import com.visionvoice.patient.ui.theme.CanvasWarmWhite
 import com.visionvoice.patient.ui.theme.ClinicalError
 import com.visionvoice.patient.ui.theme.DarkAmber
@@ -109,11 +108,10 @@ fun VoiceAnamnesisScreen(
     val context = LocalContext.current
     val currentTurn by viewModel.currentTurnIndex.collectAsState()
     val isListening by viewModel.isListening.collectAsState()
-    val isSpeaking by viewModel.isSpeaking.collectAsState()
     val isAiThinking by viewModel.isAiThinking.collectAsState()
     val transcript by viewModel.voiceTranscript.collectAsState()
     val rmsDb by viewModel.voiceRmsDb.collectAsState()
-    val isPlayingAudio by viewModel.isPlayingAudio.collectAsState()
+    val playingMessageId by viewModel.playingMessageId.collectAsState()
     val voiceError by viewModel.voiceError.collectAsState()
     val hasRecordedAudio by viewModel.hasRecordedAudio.collectAsState()
     val isPatientAudioPlaying by viewModel.isPatientAudioPlaying.collectAsState()
@@ -401,8 +399,10 @@ fun VoiceAnamnesisScreen(
                     ) {
                         val displayMessages = profile.chatHistory
 
-                        items(displayMessages) { msg ->
+                        items(displayMessages, key = { it.id }) { msg ->
                             val isAssistant = msg.sender == MessageSender.AI_ASSISTANT
+                            val isThisMessagePlaying = playingMessageId == msg.id
+
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = if (isAssistant) Arrangement.Start else Arrangement.End
@@ -416,10 +416,22 @@ fun VoiceAnamnesisScreen(
                                     ),
                                     color = if (isAssistant) SurfaceTeal else DeepMedicalTeal,
                                     border = if (isAssistant) BorderStroke(1.dp, DeepMedicalTeal.copy(alpha = 0.25f)) else null,
-                                    modifier = Modifier.fillMaxWidth(0.85f)
+                                    modifier = Modifier
+                                        .fillMaxWidth(0.85f)
+                                        .clip(
+                                            RoundedCornerShape(
+                                                topStart = 16.dp,
+                                                topEnd = 16.dp,
+                                                bottomStart = if (isAssistant) 4.dp else 16.dp,
+                                                bottomEnd = if (isAssistant) 16.dp else 4.dp
+                                            )
+                                        )
+                                        .clickable {
+                                            viewModel.toggleMessageAudio(msg)
+                                        }
                                 ) {
                                     Column(
-                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                                        modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 6.dp)
                                     ) {
                                         Text(
                                             text = if (isAssistant) "AI Assistant" else "You",
@@ -439,6 +451,18 @@ fun VoiceAnamnesisScreen(
                                                 fontWeight = FontWeight.Normal
                                             )
                                         )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.End,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            MessageAudioIndicator(
+                                                isPlaying = isThisMessagePlaying,
+                                                waveformColor = if (isAssistant) DarkAmber else Color(0xFF38BDF8),
+                                                iconColor = if (isAssistant) DarkAmber.copy(alpha = 0.75f) else Color.White.copy(alpha = 0.8f)
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -588,14 +612,10 @@ fun VoiceAnamnesisScreen(
                         }
                     }
 
-                    // Bottom Bar inside Chat Box: Circular Mic indicators
-                    // 2. Agent speaking: circular mic on bottom-left with pulsating orange wave & glass effect
-                    // 3. Human speaking: circular mic on bottom-right with pulsating blue wave
+                    // Bottom Bar inside Chat Box: Mic indicator & audio review
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(SurfaceContainerLowest)
-                            .border(BorderStroke(1.dp, OutlineSlate.copy(alpha = 0.4f)))
                             .padding(horizontal = 10.dp, vertical = 8.dp)
                     ) {
                         if (hasRecordedAudio) {
@@ -707,18 +727,10 @@ fun VoiceAnamnesisScreen(
                         } else {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
+                                horizontalArrangement = Arrangement.Center,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                // Left: Agent Speaking Indicator (Orange glass wave)
-                                PulsatingVoicePill(
-                                    isActive = isSpeaking || isPlayingAudio,
-                                    isHuman = false,
-                                    label = if (isSpeaking || isPlayingAudio) "Agent Speaking" else "Hear Voice",
-                                    onClick = { viewModel.replayAudio() }
-                                )
-
-                                // Right: Human Speaking Indicator (Blue glass wave)
+                                // Human Speaking Button (Blue glass wave)
                                 PulsatingVoicePill(
                                     isActive = isListening,
                                     isHuman = true,
